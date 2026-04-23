@@ -1,0 +1,77 @@
+{
+  "name": "Match",
+  "type": "object",
+  "properties": {
+    "external_id": {
+      "type": "string"
+    },
+    "home_team_id": {
+      "type": "string"
+    },
+    "away_team_id": {
+      "type": "string"
+    },
+    "home_team_name": {
+      "type": "string"
+    },
+    "away_team_name": {
+      "type": "string"
+    },
+    "league_id": {
+      "type": "string"
+    },
+    "league_name": {
+      "type": "string"
+    },
+    "match_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "UPCOMING",
+        "LIVE",
+        "FINISHED",
+        "POSTPONED",
+        "CANCELLED"
+      ]
+    },
+    "home_score": {
+      "type": "number"
+    },
+    "away_score": {
+      "type": "number"
+    },
+    "minute": {
+      "type": "number"
+    },
+    "venue": {
+      "type": "string"
+    },
+    "round": {
+      "type": "string"
+    },
+    "season": {
+      "type": "string"
+    },
+    "reliability_score": {
+      "type": "number"
+    },
+    "data_sources": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "raw_data": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "home_team_name",
+    "away_team_name",
+    "league_name",
+    "match_date"
+  ]
+}

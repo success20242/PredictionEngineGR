@@ -1,0 +1,95 @@
+{
+  "name": "Team",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "short_name": {
+      "type": "string"
+    },
+    "league_id": {
+      "type": "string"
+    },
+    "league_name": {
+      "type": "string"
+    },
+    "country": {
+      "type": "string"
+    },
+    "elo_rating": {
+      "type": "number"
+    },
+    "form": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "home_form": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "away_form": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "goals_scored": {
+      "type": "number"
+    },
+    "goals_conceded": {
+      "type": "number"
+    },
+    "matches_played": {
+      "type": "number"
+    },
+    "wins": {
+      "type": "number"
+    },
+    "draws": {
+      "type": "number"
+    },
+    "losses": {
+      "type": "number"
+    },
+    "xg_for": {
+      "type": "number"
+    },
+    "xg_against": {
+      "type": "number"
+    },
+    "attack_strength": {
+      "type": "number"
+    },
+    "defense_strength": {
+      "type": "number"
+    },
+    "position": {
+      "type": "number"
+    },
+    "points": {
+      "type": "number"
+    },
+    "season": {
+      "type": "string"
+    },
+    "aliases": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "last_updated": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "name",
+    "league_name"
+  ]
+}

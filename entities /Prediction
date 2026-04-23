@@ -1,0 +1,105 @@
+{
+  "name": "Prediction",
+  "type": "object",
+  "properties": {
+    "match_id": {
+      "type": "string"
+    },
+    "home_team_name": {
+      "type": "string"
+    },
+    "away_team_name": {
+      "type": "string"
+    },
+    "league_name": {
+      "type": "string"
+    },
+    "match_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "home_win_prob": {
+      "type": "number"
+    },
+    "draw_prob": {
+      "type": "number"
+    },
+    "away_win_prob": {
+      "type": "number"
+    },
+    "predicted_home_goals": {
+      "type": "number"
+    },
+    "predicted_away_goals": {
+      "type": "number"
+    },
+    "predicted_outcome": {
+      "type": "string",
+      "enum": [
+        "HOME_WIN",
+        "DRAW",
+        "AWAY_WIN"
+      ]
+    },
+    "confidence": {
+      "type": "number"
+    },
+    "value_rating": {
+      "type": "string",
+      "enum": [
+        "STRONG_BET",
+        "MEDIUM",
+        "AVOID"
+      ]
+    },
+    "implied_home_odds": {
+      "type": "number"
+    },
+    "implied_draw_odds": {
+      "type": "number"
+    },
+    "implied_away_odds": {
+      "type": "number"
+    },
+    "poisson_probs": {
+      "type": "object"
+    },
+    "elo_probs": {
+      "type": "object"
+    },
+    "form_probs": {
+      "type": "object"
+    },
+    "xg_probs": {
+      "type": "object"
+    },
+    "ensemble_weights": {
+      "type": "object"
+    },
+    "model_version": {
+      "type": "string"
+    },
+    "actual_outcome": {
+      "type": "string",
+      "enum": [
+        "HOME_WIN",
+        "DRAW",
+        "AWAY_WIN"
+      ]
+    },
+    "was_correct": {
+      "type": "boolean"
+    },
+    "reliability_score": {
+      "type": "number"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "home_team_name",
+    "away_team_name",
+    "match_date"
+  ]
+}

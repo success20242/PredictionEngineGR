@@ -1,6 +1,7 @@
 import axios from "axios";
 
-const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent";
+const GEMINI_URL =
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent";
 
 export const callGemini = async (prompt) => {
   try {
@@ -23,7 +24,10 @@ export const callGemini = async (prompt) => {
 
     return response.data;
   } catch (error) {
-    console.error("Gemini API Error:", error.response?.data || error.message);
+    console.error(
+      "Gemini API Error:",
+      error.response?.data || error.message
+    );
     throw error;
   }
 };

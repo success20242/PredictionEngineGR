@@ -1,0 +1,55 @@
+{
+  "name": "DataJob",
+  "type": "object",
+  "properties": {
+    "job_type": {
+      "type": "string",
+      "enum": [
+        "FETCH_FIXTURES",
+        "FETCH_RESULTS",
+        "FETCH_STANDINGS",
+        "FETCH_TEAM_STATS",
+        "FETCH_H2H",
+        "GENERATE_PREDICTIONS",
+        "EVALUATE_PREDICTIONS",
+        "BACKTEST"
+      ]
+    },
+    "league_name": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "PENDING",
+        "RUNNING",
+        "COMPLETED",
+        "FAILED"
+      ]
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "records_processed": {
+      "type": "number"
+    },
+    "error_message": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string"
+    },
+    "metadata": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "job_type",
+    "status"
+  ]
+}

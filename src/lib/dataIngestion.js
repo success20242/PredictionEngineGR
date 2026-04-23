@@ -4,7 +4,7 @@
  * Normalizes team names, validates data, assigns reliability scores.
  */
 
-import { base44 } from '@/api/base44Client';
+import { apiClient } from '@/api/apiClient';
 
 export const SUPPORTED_LEAGUES = [
   { name: 'Premier League', country: 'England', short: 'EPL', avg_goals: 2.82 },
@@ -44,16 +44,25 @@ export function normalizeTeamName(name) {
 }
 
 export function calculateReliabilityScore({ sourcesCount, dataFreshness, completeness }) {
-  // sourcesCount: 1-3+ sources (higher = better)
-  // dataFreshness: minutes since last update (lower = better)
-  // completeness: 0-1 (fraction of expected fields present)
-
   const sourceScore = Math.min(1, sourcesCount / 3);
-  const freshnessScore = Math.max(0, 1 - dataFreshness / 60); // degrades over 60 min
+  const freshnessScore = Math.max(0, 1 - dataFreshness / 60);
   const completenessScore = completeness || 0.7;
 
   const reliability = (sourceScore * 0.35 + freshnessScore * 0.35 + completenessScore * 0.30);
   return parseFloat(reliability.toFixed(3));
+}
+
+/**
+ * 🔁 Generic LLM wrapper (replaces Base44 InvokeLLM)
+ */
+async function callLLM(prompt, schema) {
+  const response = await apiClient.post('/llm/invoke', {
+    prompt,
+    add_context_from_internet: true,
+    response_json_schema: schema
+  });
+
+  return response;
 }
 
 export async function fetchUpcomingFixtures(leagueName, onProgress) {
@@ -62,55 +71,27 @@ export async function fetchUpcomingFixtures(leagueName, onProgress) {
 
   onProgress?.(`Fetching fixtures for ${leagueName}...`);
 
-  const prompt = `You are a football data aggregator. Fetch and return the REAL upcoming fixtures for the ${leagueName} (${league.country}) for the next 14 days from today (${new Date().toISOString().split('T')[0]}).
+  const prompt = `You are a football data aggregator. Fetch the REAL upcoming fixtures for the ${leagueName} (${league.country}) for the next 14 days from today (${new Date().toISOString().split('T')[0]}).
 
 Search multiple sources: official league website, BBC Sport, Sky Sports, ESPN FC, goal.com.
 
-Return a JSON object with this exact structure:
+Return ONLY JSON:
 {
   "league": "${leagueName}",
   "season": "2024-25",
   "fetched_at": "<ISO timestamp>",
-  "sources": ["source1", "source2"],
-  "matches": [
-    {
-      "home_team": "Team Name",
-      "away_team": "Team Name",
-      "match_date": "YYYY-MM-DDTHH:MM:00Z",
-      "venue": "Stadium Name",
-      "round": "Matchweek X or Round of 16 etc",
-      "status": "UPCOMING"
-    }
-  ]
-}
+  "sources": [],
+  "matches": []
+}`;
 
-IMPORTANT: Use real team names and real scheduled dates. Include at least 5-10 matches if available. Return only the JSON, no other text.`;
-
-  const result = await base44.integrations.Core.InvokeLLM({
-    prompt,
-    add_context_from_internet: true,
-    response_json_schema: {
-      type: 'object',
-      properties: {
-        league: { type: 'string' },
-        season: { type: 'string' },
-        fetched_at: { type: 'string' },
-        sources: { type: 'array', items: { type: 'string' } },
-        matches: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              home_team: { type: 'string' },
-              away_team: { type: 'string' },
-              match_date: { type: 'string' },
-              venue: { type: 'string' },
-              round: { type: 'string' },
-              status: { type: 'string' }
-            }
-          }
-        }
-      }
+  const result = await callLLM(prompt, {
+    type: 'object',
+    properties: {
+      league: { type: 'string' },
+      season: { type: 'string' },
+      fetched_at: { type: 'string' },
+      sources: { type: 'array', items: { type: 'string' } },
+      matches: { type: 'array', items: { type: 'object' } }
     }
   });
 
@@ -135,67 +116,16 @@ IMPORTANT: Use real team names and real scheduled dates. Include at least 5-10 m
 export async function fetchLeagueStandings(leagueName, onProgress) {
   onProgress?.(`Fetching standings for ${leagueName}...`);
 
-  const prompt = `Fetch the CURRENT ${leagueName} league standings table for the 2024-25 season.
+  const prompt = `Fetch CURRENT ${leagueName} standings for 2024-25 season. Return ONLY JSON.`;
 
-Search: official league site, BBC Sport, Sky Sports, ESPN.
-
-Return JSON:
-{
-  "league": "${leagueName}",
-  "season": "2024-25",
-  "last_updated": "<ISO timestamp>",
-  "sources": ["source1"],
-  "standings": [
-    {
-      "position": 1,
-      "team": "Team Name",
-      "played": 28,
-      "won": 18,
-      "drawn": 5,
-      "lost": 5,
-      "goals_for": 55,
-      "goals_against": 28,
-      "goal_difference": 27,
-      "points": 59,
-      "form": ["W","W","D","W","L"],
-      "home_record": {"played":14,"won":10,"drawn":2,"lost":2},
-      "away_record": {"played":14,"won":8,"drawn":3,"lost":3}
-    }
-  ]
-}
-
-Return only JSON. Use real current data.`;
-
-  const result = await base44.integrations.Core.InvokeLLM({
-    prompt,
-    add_context_from_internet: true,
-    response_json_schema: {
-      type: 'object',
-      properties: {
-        league: { type: 'string' },
-        season: { type: 'string' },
-        last_updated: { type: 'string' },
-        sources: { type: 'array', items: { type: 'string' } },
-        standings: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              position: { type: 'number' },
-              team: { type: 'string' },
-              played: { type: 'number' },
-              won: { type: 'number' },
-              drawn: { type: 'number' },
-              lost: { type: 'number' },
-              goals_for: { type: 'number' },
-              goals_against: { type: 'number' },
-              goal_difference: { type: 'number' },
-              points: { type: 'number' },
-              form: { type: 'array', items: { type: 'string' } }
-            }
-          }
-        }
-      }
+  const result = await callLLM(prompt, {
+    type: 'object',
+    properties: {
+      league: { type: 'string' },
+      season: { type: 'string' },
+      last_updated: { type: 'string' },
+      sources: { type: 'array', items: { type: 'string' } },
+      standings: { type: 'array', items: { type: 'object' } }
     }
   });
 
@@ -213,49 +143,13 @@ Return only JSON. Use real current data.`;
 export async function fetchRecentResults(leagueName, onProgress) {
   onProgress?.(`Fetching recent results for ${leagueName}...`);
 
-  const prompt = `Fetch the last 10 completed match results for the ${leagueName} 2024-25 season.
+  const prompt = `Fetch last 10 results for ${leagueName}. Return ONLY JSON.`;
 
-Return JSON:
-{
-  "league": "${leagueName}",
-  "results": [
-    {
-      "home_team": "Team",
-      "away_team": "Team",
-      "home_score": 2,
-      "away_score": 1,
-      "match_date": "YYYY-MM-DDTHH:MM:00Z",
-      "round": "Matchweek X",
-      "status": "FINISHED"
-    }
-  ]
-}
-
-Return only JSON with real recent results.`;
-
-  const result = await base44.integrations.Core.InvokeLLM({
-    prompt,
-    add_context_from_internet: true,
-    response_json_schema: {
-      type: 'object',
-      properties: {
-        league: { type: 'string' },
-        results: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              home_team: { type: 'string' },
-              away_team: { type: 'string' },
-              home_score: { type: 'number' },
-              away_score: { type: 'number' },
-              match_date: { type: 'string' },
-              round: { type: 'string' },
-              status: { type: 'string' }
-            }
-          }
-        }
-      }
+  const result = await callLLM(prompt, {
+    type: 'object',
+    properties: {
+      league: { type: 'string' },
+      results: { type: 'array', items: { type: 'object' } }
     }
   });
 
@@ -273,56 +167,25 @@ Return only JSON with real recent results.`;
 export async function fetchHeadToHead(homeTeam, awayTeam, onProgress) {
   onProgress?.(`Fetching H2H: ${homeTeam} vs ${awayTeam}...`);
 
-  const prompt = `Fetch the last 5 head-to-head matches between ${homeTeam} and ${awayTeam} (any competition, last 3 years).
+  const prompt = `Fetch last 5 head-to-head matches between ${homeTeam} and ${awayTeam}. Return ONLY JSON.`;
 
-Return JSON:
-{
-  "home_team": "${homeTeam}",
-  "away_team": "${awayTeam}",
-  "h2h_matches": [
-    {
-      "home": "Team",
-      "away": "Team",
-      "home_score": 1,
-      "away_score": 0,
-      "date": "YYYY-MM-DD",
-      "competition": "Competition name",
-      "venue": "Stadium"
-    }
-  ],
-  "summary": {
-    "team1_wins": 2,
-    "team2_wins": 2,
-    "draws": 1,
-    "avg_goals": 2.4
-  }
-}
-
-Return only JSON.`;
-
-  return await base44.integrations.Core.InvokeLLM({
-    prompt,
-    add_context_from_internet: true,
-    response_json_schema: {
-      type: 'object',
-      properties: {
-        home_team: { type: 'string' },
-        away_team: { type: 'string' },
-        h2h_matches: { type: 'array', items: { type: 'object' } },
-        summary: { type: 'object' }
-      }
+  return await callLLM(prompt, {
+    type: 'object',
+    properties: {
+      home_team: { type: 'string' },
+      away_team: { type: 'string' },
+      h2h_matches: { type: 'array', items: { type: 'object' } },
+      summary: { type: 'object' }
     }
   });
 }
 
 function calculateAttackStrength(teamStanding) {
-  if (!teamStanding?.played || teamStanding.played === 0) return 1.0;
-  const leagueAvgGoalsFor = 1.4; // per game
-  return (teamStanding.goals_for / teamStanding.played) / leagueAvgGoalsFor;
+  if (!teamStanding?.played) return 1.0;
+  return (teamStanding.goals_for / teamStanding.played) / 1.4;
 }
 
 function calculateDefenseStrength(teamStanding) {
-  if (!teamStanding?.played || teamStanding.played === 0) return 1.0;
-  const leagueAvgGoalsAgainst = 1.25; // per game
-  return (teamStanding.goals_against / teamStanding.played) / leagueAvgGoalsAgainst;
+  if (!teamStanding?.played) return 1.0;
+  return (teamStanding.goals_against / teamStanding.played) / 1.25;
 }

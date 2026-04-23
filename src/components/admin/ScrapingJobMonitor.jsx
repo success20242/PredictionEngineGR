@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { apiClient } from '@/api/apiClient';
 import { useQuery } from '@tanstack/react-query';
 import { CheckCircle2, XCircle, Loader2, Clock, RefreshCw } from 'lucide-react';
 import { formatDistanceToNow, parseISO } from 'date-fns';
@@ -15,7 +15,10 @@ const STATUS_CONFIG = {
 export default function ScrapingJobMonitor() {
   const { data: jobs = [], refetch, isLoading } = useQuery({
     queryKey: ['data-jobs'],
-    queryFn: () => base44.entities.DataJob.list('-created_date', 20),
+    queryFn: async () => {
+      const res = await apiClient.get('/jobs?sort=-created_at&limit=20');
+      return res.data || res; // depending on your backend response format
+    },
     refetchInterval: 10000
   });
 
@@ -47,7 +50,7 @@ export default function ScrapingJobMonitor() {
                   )}
                   <div className="text-xs text-muted-foreground mt-0.5">
                     {job.records_processed != null && `${job.records_processed} records · `}
-                    {job.created_date && formatDistanceToNow(parseISO(job.created_date), { addSuffix: true })}
+                    {job.created_at && formatDistanceToNow(parseISO(job.created_at), { addSuffix: true })}
                   </div>
                 </div>
               </div>

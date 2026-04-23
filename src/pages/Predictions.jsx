@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Zap, RefreshCw, Filter } from 'lucide-react';
 import { validateMatchStatus } from '@/lib/matchValidator';
@@ -16,6 +15,16 @@ const DATE_FILTERS = [
   { label: 'This Week', value: 'week' }
 ];
 
+// ----------------------
+// Simple API replacement layer (base44 removed)
+// ----------------------
+const api = {
+  list: async (entity, { sort = '', limit = 100 } = {}) => {
+    const res = await fetch(`/api/${entity}?sort=${sort}&limit=${limit}`);
+    return res.json();
+  }
+};
+
 export default function Predictions() {
   const [selectedLeague, setSelectedLeague] = useState(null);
   const [selectedConfidence, setSelectedConfidence] = useState(null);
@@ -26,13 +35,13 @@ export default function Predictions() {
 
   const { data: predictions = [], isLoading, refetch } = useQuery({
     queryKey: ['all-predictions'],
-    queryFn: () => base44.entities.Prediction.list('-created_date', 100),
+    queryFn: () => api.list('Prediction', { sort: '-created_date', limit: 100 }),
     refetchInterval: 60000
   });
 
   const { data: matches = [] } = useQuery({
     queryKey: ['all-matches'],
-    queryFn: () => base44.entities.Match.list('-match_date', 100),
+    queryFn: () => api.list('Match', { sort: '-match_date', limit: 100 }),
     refetchInterval: 60000
   });
 
@@ -81,9 +90,15 @@ export default function Predictions() {
             <Zap className="w-5 h-5 text-accent-blue" />
             All Predictions
           </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{filtered.length} predictions · {strongBets.length} strong bets</p>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {filtered.length} predictions · {strongBets.length} strong bets
+          </p>
         </div>
-        <button onClick={refetch} className="flex items-center gap-2 px-3 py-2 bg-muted rounded-lg text-sm font-medium hover:bg-muted/80 transition-colors">
+
+        <button
+          onClick={refetch}
+          className="flex items-center gap-2 px-3 py-2 bg-muted rounded-lg text-sm font-medium hover:bg-muted/80 transition-colors"
+        >
           <RefreshCw className="w-3.5 h-3.5" />
           Refresh
         </button>
@@ -95,11 +110,13 @@ export default function Predictions() {
           <Filter className="w-3.5 h-3.5" />
           Filters
         </div>
+
         <LeagueFilter selected={selectedLeague} onChange={setSelectedLeague} />
         <ConfidenceFilter selected={selectedConfidence} onChange={setSelectedConfidence} />
 
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs text-muted-foreground">Date:</span>
+
           {DATE_FILTERS.map(opt => (
             <button
               key={opt.value}
@@ -116,6 +133,7 @@ export default function Predictions() {
           ))}
 
           <span className="text-xs text-muted-foreground ml-3">Sort:</span>
+
           {[
             { label: 'Confidence', value: 'confidence' },
             { label: 'Date', value: 'date' },
@@ -137,7 +155,7 @@ export default function Predictions() {
         </div>
       </div>
 
-      {/* Predictions Grid */}
+      {/* Grid */}
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {[...Array(9)].map((_, i) => (
@@ -153,16 +171,22 @@ export default function Predictions() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map(prediction => {
-            const match = validatedMatches.find(m =>
-              m.id === prediction.match_id ||
-              (m.home_team_name === prediction.home_team_name && m.away_team_name === prediction.away_team_name)
+            const match = validatedMatches.find(
+              m =>
+                m.id === prediction.match_id ||
+                (m.home_team_name === prediction.home_team_name &&
+                  m.away_team_name === prediction.away_team_name)
             );
+
             return (
               <MatchCard
                 key={prediction.id}
                 prediction={prediction}
                 match={match}
-                onClick={() => { setSelectedPrediction(prediction); setSelectedMatch(match || null); }}
+                onClick={() => {
+                  setSelectedPrediction(prediction);
+                  setSelectedMatch(match || null);
+                }}
               />
             );
           })}
@@ -173,7 +197,10 @@ export default function Predictions() {
         <MatchDetailModal
           prediction={selectedPrediction}
           match={selectedMatch}
-          onClose={() => { setSelectedPrediction(null); setSelectedMatch(null); }}
+          onClose={() => {
+            setSelectedPrediction(null);
+            setSelectedMatch(null);
+          }}
         />
       )}
     </div>

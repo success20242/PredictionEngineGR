@@ -1,0 +1,48 @@
+{
+  "name": "ReportSchedule",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "email": {
+      "type": "string"
+    },
+    "frequency": {
+      "type": "string",
+      "enum": [
+        "daily",
+        "weekly",
+        "monthly"
+      ]
+    },
+    "report_type": {
+      "type": "string",
+      "enum": [
+        "predictions",
+        "performance",
+        "full"
+      ]
+    },
+    "league_filter": {
+      "type": "string"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    },
+    "last_sent": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "next_send": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "email",
+    "frequency",
+    "report_type"
+  ]
+}

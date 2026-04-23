@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { apiClient } from '@/api/apiClient';
 import { useQuery } from '@tanstack/react-query';
 import { RefreshCw, Download, AlertCircle, FileText } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -26,20 +26,20 @@ export default function Dashboard() {
 
   const { data: predictions = [], refetch: refetchPredictions, isLoading: predsLoading } = useQuery({
     queryKey: ['predictions'],
-    queryFn: () => base44.entities.Prediction.list('-created_date', 50),
+    queryFn: () => apiClient.entities.Prediction.list('-created_date', 50),
     refetchInterval: 30000
   });
 
   const { data: matches = [], refetch: refetchMatches } = useQuery({
     queryKey: ['matches'],
-    queryFn: () => base44.entities.Match.list('-match_date', 50),
+    queryFn: () => apiClient.entities.Match.list('-match_date', 50),
     refetchInterval: 30000
   });
 
   const { data: latestMetrics } = useQuery({
     queryKey: ['model-metrics'],
     queryFn: async () => {
-      const metrics = await base44.entities.ModelMetrics.list('-created_date', 1);
+      const metrics = await apiClient.entities.ModelMetrics.list('-created_date', 1);
       return metrics[0] || null;
     }
   });
@@ -58,7 +58,7 @@ export default function Dashboard() {
   });
 
   // Filter
-  const filtered = enrichedPredictions.filter(({ prediction, match }) => {
+  const filtered = enrichedPredictions.filter(({ prediction }) => {
     if (selectedLeague && prediction.league_name !== selectedLeague) return false;
     if (selectedConfidence && prediction.value_rating !== selectedConfidence) return false;
     return true;
@@ -72,32 +72,33 @@ export default function Dashboard() {
 
     const log = (msg) => setIngestLog(prev => [...prev, msg]);
 
-    // Create job record
     let jobRecord;
     try {
-      jobRecord = await base44.entities.DataJob.create({
+      jobRecord = await apiClient.entities.DataJob.create({
         job_type: 'FETCH_FIXTURES',
         league_name: leagueName,
         status: 'RUNNING',
         started_at: new Date().toISOString()
       });
-    } catch (e) { /* non-critical */ }
+    } catch (e) {}
 
     try {
-      // Step 1: Fetch fixtures
       const fixturesData = await fetchUpcomingFixtures(leagueName, log);
       const fixtures = fixturesData.matches || [];
       log(`✓ Got ${fixtures.length} fixtures`);
 
-      // Step 2: Fetch standings (for team stats)
       const standingsData = await fetchLeagueStandings(leagueName, log);
       const standings = standingsData.standings || [];
       log(`✓ Got ${standings.length} teams from standings`);
 
-      // Step 3: Upsert teams
       const teamMap = {};
+
       for (const standing of standings) {
-        const existing = await base44.entities.Team.filter({ name: standing.team, league_name: leagueName });
+        const existing = await apiClient.entities.Team.filter({
+          name: standing.team,
+          league_name: leagueName
+        });
+
         const teamData = {
           name: standing.team,
           league_name: leagueName,
@@ -118,28 +119,28 @@ export default function Dashboard() {
         };
 
         if (existing.length > 0) {
-          await base44.entities.Team.update(existing[0].id, teamData);
+          await apiClient.entities.Team.update(existing[0].id, teamData);
           teamMap[standing.team] = { ...existing[0], ...teamData };
         } else {
-          const created = await base44.entities.Team.create(teamData);
+          const created = await apiClient.entities.Team.create(teamData);
           teamMap[standing.team] = created;
         }
       }
+
       log(`✓ Upserted ${Object.keys(teamMap).length} teams`);
 
-      // Step 4: Create matches + predictions
       const league = SUPPORTED_LEAGUES.find(l => l.name === leagueName);
       let predictionsCreated = 0;
 
-      for (const fixture of fixtures.slice(0, 10)) { // limit for performance
-        // Check if match already exists
-        const existing = await base44.entities.Match.filter({
+      for (const fixture of fixtures.slice(0, 10)) {
+        const existing = await apiClient.entities.Match.filter({
           home_team_name: fixture.home_team,
           away_team_name: fixture.away_team,
           league_name: leagueName
         });
 
         let matchRecord;
+
         const matchData = {
           home_team_name: fixture.home_team,
           away_team_name: fixture.away_team,
@@ -154,20 +155,25 @@ export default function Dashboard() {
         };
 
         if (existing.length > 0) {
-          await base44.entities.Match.update(existing[0].id, matchData);
+          await apiClient.entities.Match.update(existing[0].id, matchData);
           matchRecord = { ...existing[0], ...matchData };
         } else {
-          matchRecord = await base44.entities.Match.create(matchData);
+          matchRecord = await apiClient.entities.Match.create(matchData);
         }
 
-        // Generate prediction
-        const homeTeam = teamMap[fixture.home_team] || standingsData.standings?.find(s => s.team === fixture.home_team);
-        const awayTeam = teamMap[fixture.away_team] || standingsData.standings?.find(s => s.team === fixture.away_team);
+        const homeTeam = teamMap[fixture.home_team] ||
+          standingsData.standings?.find(s => s.team === fixture.home_team);
+
+        const awayTeam = teamMap[fixture.away_team] ||
+          standingsData.standings?.find(s => s.team === fixture.away_team);
 
         if (homeTeam || awayTeam) {
           const predResult = runEnsemble(homeTeam, awayTeam, league);
 
-          const predExisting = await base44.entities.Prediction.filter({ match_id: matchRecord.id });
+          const predExisting = await apiClient.entities.Prediction.filter({
+            match_id: matchRecord.id
+          });
+
           const predData = {
             match_id: matchRecord.id,
             home_team_name: fixture.home_team,
@@ -180,9 +186,9 @@ export default function Dashboard() {
           };
 
           if (predExisting.length > 0) {
-            await base44.entities.Prediction.update(predExisting[0].id, predData);
+            await apiClient.entities.Prediction.update(predExisting[0].id, predData);
           } else {
-            await base44.entities.Prediction.create(predData);
+            await apiClient.entities.Prediction.create(predData);
             predictionsCreated++;
           }
         }
@@ -190,9 +196,8 @@ export default function Dashboard() {
 
       log(`✓ Generated ${predictionsCreated} predictions`);
 
-      // Mark job complete
       if (jobRecord) {
-        await base44.entities.DataJob.update(jobRecord.id, {
+        await apiClient.entities.DataJob.update(jobRecord.id, {
           status: 'COMPLETED',
           completed_at: new Date().toISOString(),
           records_processed: fixtures.length
@@ -204,8 +209,9 @@ export default function Dashboard() {
       log(`✅ Done! ${leagueName} data updated.`);
     } catch (err) {
       setIngestError(err.message);
+
       if (jobRecord) {
-        await base44.entities.DataJob.update(jobRecord.id, {
+        await apiClient.entities.DataJob.update(jobRecord.id, {
           status: 'FAILED',
           error_message: err.message
         });
@@ -218,12 +224,14 @@ export default function Dashboard() {
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Multi-model ensemble predictions · Auto-refreshes every 30s</p>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Multi-model ensemble predictions · Auto-refreshes every 30s
+          </p>
         </div>
+
         <div className="flex items-center gap-2">
           <Link
             to="/reports"
@@ -232,6 +240,7 @@ export default function Dashboard() {
             <FileText className="w-3.5 h-3.5" />
             Reports
           </Link>
+
           <button
             onClick={() => { refetchPredictions(); refetchMatches(); }}
             className="flex items-center gap-2 px-3 py-2 bg-muted hover:bg-muted/80 rounded-lg text-sm font-medium text-foreground transition-colors"
@@ -242,12 +251,11 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Stats */}
       <StatsBar predictions={predictions} metrics={latestMetrics} />
 
-      {/* Data Ingestion */}
       <div className="bg-card border border-border rounded-xl p-4">
         <div className="text-sm font-semibold text-foreground mb-3">Fetch Live Data</div>
+
         <div className="flex flex-wrap gap-2 mb-3">
           {SUPPORTED_LEAGUES.map(league => (
             <button
@@ -261,17 +269,11 @@ export default function Dashboard() {
                   : 'bg-muted text-muted-foreground border-border hover:border-accent-blue/30 hover:text-foreground disabled:opacity-50'
               )}
             >
-              {isIngesting && ingestLeague === league.name ? (
-                <span className="flex items-center gap-1.5">
-                  <RefreshCw className="w-3 h-3 animate-spin" />
-                  {league.short}...
-                </span>
-              ) : league.short}
+              {league.short}
             </button>
           ))}
         </div>
 
-        {/* Ingestion log */}
         {ingestLog.length > 0 && (
           <div className="bg-muted/50 rounded-lg p-3 space-y-1 max-h-32 overflow-y-auto">
             {ingestLog.map((msg, i) => (
@@ -279,6 +281,7 @@ export default function Dashboard() {
             ))}
           </div>
         )}
+
         {ingestError && (
           <div className="flex items-center gap-2 mt-2 text-xs text-rose-400">
             <AlertCircle className="w-3.5 h-3.5" />
@@ -287,27 +290,16 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Filters + Grid */}
       <div className="flex flex-col lg:flex-row gap-6">
         <div className="flex-1 space-y-4">
-          <div className="flex flex-wrap gap-3 items-center">
-            <LeagueFilter selected={selectedLeague} onChange={setSelectedLeague} />
-          </div>
-          <div className="flex flex-wrap gap-3 items-center">
-            <ConfidenceFilter selected={selectedConfidence} onChange={setSelectedConfidence} />
-          </div>
+          <LeagueFilter selected={selectedLeague} onChange={setSelectedLeague} />
+          <ConfidenceFilter selected={selectedConfidence} onChange={setSelectedConfidence} />
 
           {predsLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {[...Array(6)].map((_, i) => (
                 <div key={i} className="bg-card border border-border rounded-xl p-4 h-48 animate-pulse" />
               ))}
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="text-center py-16 text-muted-foreground">
-              <div className="text-4xl mb-3">⚽</div>
-              <div className="font-medium">No predictions yet</div>
-              <div className="text-sm mt-1">Click a league above to fetch live data and generate predictions</div>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -316,16 +308,19 @@ export default function Dashboard() {
                   key={prediction.id}
                   prediction={prediction}
                   match={match}
-                  onClick={() => { setSelectedPrediction(prediction); setSelectedMatch(match); }}
+                  onClick={() => {
+                    setSelectedPrediction(prediction);
+                    setSelectedMatch(match);
+                  }}
                 />
               ))}
             </div>
           )}
         </div>
 
-        {/* Side panel */}
         <div className="lg:w-72 space-y-4">
           <ModelWeightsPanel />
+
           {latestMetrics && (
             <div className="bg-card border border-border rounded-xl p-4 space-y-3">
               <div className="text-sm font-semibold text-foreground">Last Evaluation</div>
@@ -346,12 +341,14 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Detail Modal */}
       {selectedPrediction && (
         <MatchDetailModal
           prediction={selectedPrediction}
           match={selectedMatch}
-          onClose={() => { setSelectedPrediction(null); setSelectedMatch(null); }}
+          onClose={() => {
+            setSelectedPrediction(null);
+            setSelectedMatch(null);
+          }}
         />
       )}
     </div>

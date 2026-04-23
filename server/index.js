@@ -1,6 +1,8 @@
+import dotenv from "dotenv";
+dotenv.config(); // MUST be first
+
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
 import { callGemini } from "./services/geminiService.js";
 
 dotenv.config();
@@ -16,7 +18,7 @@ app.get("/", (req, res) => {
   res.json({ status: "Server running" });
 });
 
-// GEMINI ROUTE (THIS FIXES YOUR NETWORK ERROR)
+// GEMINI ROUTE
 app.post("/api/llm/invoke", async (req, res) => {
   try {
     const { prompt } = req.body;

@@ -1,0 +1,43 @@
+{
+  "name": "League",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "short_name": {
+      "type": "string"
+    },
+    "country": {
+      "type": "string"
+    },
+    "season": {
+      "type": "string"
+    },
+    "is_active": {
+      "type": "boolean"
+    },
+    "avg_goals_per_match": {
+      "type": "number"
+    },
+    "home_win_rate": {
+      "type": "number"
+    },
+    "draw_rate": {
+      "type": "number"
+    },
+    "away_win_rate": {
+      "type": "number"
+    },
+    "priority": {
+      "type": "number"
+    },
+    "last_scraped": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "name"
+  ]
+}

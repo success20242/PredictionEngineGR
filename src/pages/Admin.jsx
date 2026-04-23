@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { apiClient } from '@/api/apiClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Settings, Database, Sliders, BarChart2, Trash2, RefreshCw, AlertCircle, CheckCircle2 } from 'lucide-react';
 import ScrapingJobMonitor from '@/components/admin/ScrapingJobMonitor';
@@ -16,36 +16,36 @@ export default function Admin() {
 
   const { data: allPredictions = [] } = useQuery({
     queryKey: ['admin-predictions'],
-    queryFn: () => base44.entities.Prediction.list('-created_date', 500)
+    queryFn: () => apiClient.get('/predictions?limit=500&sort=-created_date')
   });
 
   const { data: allMatches = [] } = useQuery({
     queryKey: ['admin-matches'],
-    queryFn: () => base44.entities.Match.list('-created_date', 200)
+    queryFn: () => apiClient.get('/matches?limit=200&sort=-created_date')
   });
 
   const { data: allTeams = [] } = useQuery({
     queryKey: ['admin-teams'],
-    queryFn: () => base44.entities.Team.list('-created_date', 200)
+    queryFn: () => apiClient.get('/teams?limit=200&sort=-created_date')
   });
 
   const { data: latestMetrics } = useQuery({
     queryKey: ['admin-metrics'],
     queryFn: async () => {
-      const m = await base44.entities.ModelMetrics.list('-created_date', 1);
-      return m[0] || null;
+      const res = await apiClient.get('/model-metrics?limit=1&sort=-created_date');
+      return res?.[0] || null;
     }
   });
 
   async function saveWeights() {
-    // Apply new weights by creating a model metrics record
-    await base44.entities.ModelMetrics.create({
+    await apiClient.post('/model-metrics', {
       model_name: 'Manual Weight Override',
       version: `manual-${Date.now()}`,
       ensemble_weights: weights,
       evaluated_at: new Date().toISOString(),
       notes: 'Manually adjusted from Admin panel'
     });
+
     setSaveMsg('Weights saved!');
     qc.invalidateQueries({ queryKey: ['admin-metrics'] });
     setTimeout(() => setSaveMsg(null), 3000);
@@ -54,11 +54,11 @@ export default function Admin() {
   async function clearData(type) {
     if (type === 'predictions') {
       for (const p of allPredictions) {
-        await base44.entities.Prediction.delete(p.id);
+        await apiClient.delete(`/predictions/${p.id}`);
       }
     } else if (type === 'matches') {
       for (const m of allMatches) {
-        await base44.entities.Match.delete(m.id);
+        await apiClient.delete(`/matches/${m.id}`);
       }
     }
     qc.invalidateQueries();
@@ -160,7 +160,10 @@ export default function Admin() {
           >
             Save Weights
           </button>
-          {saveMsg && <div className="mt-2 text-xs text-emerald-400 text-center">{saveMsg}</div>}
+
+          {saveMsg && (
+            <div className="mt-2 text-xs text-emerald-400 text-center">{saveMsg}</div>
+          )}
         </div>
 
         {/* Performance chart */}
@@ -182,15 +185,18 @@ export default function Admin() {
             </thead>
             <tbody className="divide-y divide-border/50">
               {leagueBreakdown.map(row => (
-                <tr key={row.name} className="text-sm">
+                <tr key={row.name}>
                   <td className="py-2.5 font-medium text-foreground">{row.name}</td>
                   <td className="py-2.5 text-right text-muted-foreground">{row.total}</td>
                   <td className="py-2.5 text-right text-muted-foreground">{row.resolved}</td>
                   <td className="py-2.5 text-right">
-                    {row.accuracy
-                      ? <span className={cn('font-semibold', parseFloat(row.accuracy) >= 50 ? 'text-emerald-400' : 'text-rose-400')}>{row.accuracy}%</span>
-                      : <span className="text-muted-foreground">—</span>
-                    }
+                    {row.accuracy ? (
+                      <span className={cn('font-semibold', parseFloat(row.accuracy) >= 50 ? 'text-emerald-400' : 'text-rose-400')}>
+                        {row.accuracy}%
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -208,27 +214,43 @@ export default function Admin() {
           <AlertCircle className="w-4 h-4 text-rose-400" />
           Data Management
         </div>
+
         <div className="flex gap-3">
+          {/* Predictions */}
           {confirmClear === 'predictions' ? (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-rose-400">Delete all {allPredictions.length} predictions?</span>
-              <button onClick={() => clearData('predictions')} className="px-3 py-1.5 bg-rose-500/15 text-rose-400 border border-rose-500/30 rounded-lg text-xs font-medium">Confirm</button>
-              <button onClick={() => setConfirmClear(null)} className="px-3 py-1.5 bg-muted text-muted-foreground rounded-lg text-xs font-medium">Cancel</button>
+              <span className="text-xs text-rose-400">
+                Delete all {allPredictions.length} predictions?
+              </span>
+              <button onClick={() => clearData('predictions')} className="px-3 py-1.5 bg-rose-500/15 text-rose-400 border border-rose-500/30 rounded-lg text-xs font-medium">
+                Confirm
+              </button>
+              <button onClick={() => setConfirmClear(null)} className="px-3 py-1.5 bg-muted text-muted-foreground rounded-lg text-xs font-medium">
+                Cancel
+              </button>
             </div>
           ) : (
-            <button onClick={() => setConfirmClear('predictions')} className="flex items-center gap-2 px-3 py-2 bg-muted hover:bg-rose-500/10 text-muted-foreground hover:text-rose-400 rounded-lg text-xs font-medium transition-colors border border-border">
+            <button onClick={() => setConfirmClear('predictions')} className="flex items-center gap-2 px-3 py-2 bg-muted hover:bg-rose-500/10 text-muted-foreground hover:text-rose-400 rounded-lg text-xs font-medium border border-border">
               <Trash2 className="w-3.5 h-3.5" />
               Clear Predictions
             </button>
           )}
+
+          {/* Matches */}
           {confirmClear === 'matches' ? (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-rose-400">Delete all {allMatches.length} matches?</span>
-              <button onClick={() => clearData('matches')} className="px-3 py-1.5 bg-rose-500/15 text-rose-400 border border-rose-500/30 rounded-lg text-xs font-medium">Confirm</button>
-              <button onClick={() => setConfirmClear(null)} className="px-3 py-1.5 bg-muted text-muted-foreground rounded-lg text-xs font-medium">Cancel</button>
+              <span className="text-xs text-rose-400">
+                Delete all {allMatches.length} matches?
+              </span>
+              <button onClick={() => clearData('matches')} className="px-3 py-1.5 bg-rose-500/15 text-rose-400 border border-rose-500/30 rounded-lg text-xs font-medium">
+                Confirm
+              </button>
+              <button onClick={() => setConfirmClear(null)} className="px-3 py-1.5 bg-muted text-muted-foreground rounded-lg text-xs font-medium">
+                Cancel
+              </button>
             </div>
           ) : (
-            <button onClick={() => setConfirmClear('matches')} className="flex items-center gap-2 px-3 py-2 bg-muted hover:bg-rose-500/10 text-muted-foreground hover:text-rose-400 rounded-lg text-xs font-medium transition-colors border border-border">
+            <button onClick={() => setConfirmClear('matches')} className="flex items-center gap-2 px-3 py-2 bg-muted hover:bg-rose-500/10 text-muted-foreground hover:text-rose-400 rounded-lg text-xs font-medium border border-border">
               <Trash2 className="w-3.5 h-3.5" />
               Clear Matches
             </button>

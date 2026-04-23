@@ -1,0 +1,52 @@
+{
+  "name": "ModelMetrics",
+  "type": "object",
+  "properties": {
+    "model_name": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "accuracy": {
+      "type": "number"
+    },
+    "precision": {
+      "type": "number"
+    },
+    "roi": {
+      "type": "number"
+    },
+    "win_rate": {
+      "type": "number"
+    },
+    "total_predictions": {
+      "type": "number"
+    },
+    "correct_predictions": {
+      "type": "number"
+    },
+    "strong_bet_accuracy": {
+      "type": "number"
+    },
+    "medium_accuracy": {
+      "type": "number"
+    },
+    "ensemble_weights": {
+      "type": "object"
+    },
+    "league_accuracy": {
+      "type": "object"
+    },
+    "evaluated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "model_name"
+  ]
+}

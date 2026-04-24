@@ -19,7 +19,7 @@ export const callGemini = async (prompt) => {
           "Content-Type": "application/json",
           "X-goog-api-key": process.env.GEMINI_API_KEY,
         },
-        timeout: 20000,
+        timeout: 30000, // ⬅️ increase to 30s
       }
     );
 
@@ -30,9 +30,11 @@ export const callGemini = async (prompt) => {
       error.response?.data || error.message
     );
 
+    // ✅ VERY IMPORTANT: fallback response
     return {
       fallback: true,
-      message: "AI temporarily unavailable",
+      prediction: "AI unavailable",
+      confidence: 0,
     };
   }
 };

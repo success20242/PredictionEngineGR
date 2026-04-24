@@ -1,85 +1,145 @@
 /**
- * POISSON MODEL
- * Models goal scoring as a Poisson process.
- * Calculates match outcome probabilities based on expected goals.
+ * ⚽ POISSON MODEL (CLEAN + SAFE VERSION)
+ * Models goals as independent Poisson processes
+ * Outputs match probabilities + expected goals
  */
 
-// Poisson probability mass function
+// ==========================
+// 📊 POISSON PMF
+// ==========================
 function poissonPMF(k, lambda) {
   if (lambda <= 0) return k === 0 ? 1 : 0;
+
   let result = Math.exp(-lambda);
+
   for (let i = 1; i <= k; i++) {
     result *= lambda / i;
   }
+
   return result;
 }
 
-// Build score matrix for goals 0..maxGoals
+// ==========================
+// 📊 SCORE MATRIX (0–maxGoals)
+// ==========================
 function buildScoreMatrix(lambdaHome, lambdaAway, maxGoals = 6) {
   const matrix = [];
+
   for (let h = 0; h <= maxGoals; h++) {
     matrix[h] = [];
+
     for (let a = 0; a <= maxGoals; a++) {
-      matrix[h][a] = poissonPMF(h, lambdaHome) * poissonPMF(a, lambdaAway);
+      matrix[h][a] =
+        poissonPMF(h, lambdaHome) *
+        poissonPMF(a, lambdaAway);
     }
   }
+
   return matrix;
 }
 
-export function calculatePoissonProbabilities(homeTeam, awayTeam, leagueAvgGoals = 2.65) {
-  // League average attack/defense baseline
-  const leagueAvgHome = leagueAvgGoals * 0.55; // home teams score ~55% of avg
-  const leagueAvgAway = leagueAvgGoals * 0.45;
+// ==========================
+// ⚽ MAIN POISSON MODEL
+// ==========================
+export function calculatePoissonProbabilities(
+  homeTeam,
+  awayTeam,
+  leagueAvgGoals = 2.65
+) {
+  // safety fallback
+  const safeLeagueAvg = leagueAvgGoals || 2.65;
 
-  // Team attack/defense strengths (default to 1.0 if not available)
-  const homeAttack = homeTeam?.attack_strength || 1.0;
-  const homeDefense = homeTeam?.defense_strength || 1.0;
-  const awayAttack = awayTeam?.attack_strength || 1.0;
-  const awayDefense = awayTeam?.defense_strength || 1.0;
+  // league distribution split
+  const leagueAvgHome = safeLeagueAvg * 0.55;
+  const leagueAvgAway = safeLeagueAvg * 0.45;
 
-  // Expected goals using Dixon-Coles style
-  const lambdaHome = homeAttack * awayDefense * leagueAvgHome;
-  const lambdaAway = awayAttack * homeDefense * leagueAvgAway;
+  // ==========================
+  // 🧠 TEAM STRENGTHS (SAFE)
+  // ==========================
+  const homeAttack = Number(homeTeam?.attack_strength ?? 1);
+  const homeDefense = Number(homeTeam?.defense_strength ?? 1);
 
-  const matrix = buildScoreMatrix(
-    Math.max(0.1, lambdaHome),
-    Math.max(0.1, lambdaAway)
+  const awayAttack = Number(awayTeam?.attack_strength ?? 1);
+  const awayDefense = Number(awayTeam?.defense_strength ?? 1);
+
+  // ==========================
+  // ⚽ EXPECTED GOALS
+  // ==========================
+  const lambdaHome = Math.max(
+    0.1,
+    homeAttack * awayDefense * leagueAvgHome
   );
 
-  let homeWin = 0, draw = 0, awayWin = 0;
+  const lambdaAway = Math.max(
+    0.1,
+    awayAttack * homeDefense * leagueAvgAway
+  );
+
+  const matrix = buildScoreMatrix(lambdaHome, lambdaAway);
+
+  // ==========================
+  // 📊 OUTCOME CALCULATION
+  // ==========================
+  let homeWin = 0;
+  let draw = 0;
+  let awayWin = 0;
+
   for (let h = 0; h <= 6; h++) {
     for (let a = 0; a <= 6; a++) {
       const p = matrix[h][a];
+
       if (h > a) homeWin += p;
       else if (h === a) draw += p;
       else awayWin += p;
     }
   }
 
-  // Normalize to sum to 1
-  const total = homeWin + draw + awayWin;
+  const total = homeWin + draw + awayWin || 1;
 
+  // ==========================
+  // 📤 RETURN NORMALIZED OUTPUT
+  // ==========================
   return {
-    home_win: homeWin / total,
-    draw: draw / total,
-    away_win: awayWin / total,
-    expected_home_goals: lambdaHome,
-    expected_away_goals: lambdaAway,
+    home_win: +(homeWin / total).toFixed(4),
+    draw: +(draw / total).toFixed(4),
+    away_win: +(awayWin / total).toFixed(4),
+
+    expected_home_goals: +lambdaHome.toFixed(2),
+    expected_away_goals: +lambdaAway.toFixed(2),
+
     score_matrix: matrix,
-    model: 'poisson'
+    model: "poisson"
   };
 }
 
+// ==========================
+// 🎯 MOST LIKELY SCORE
+// ==========================
 export function getMostLikelyScore(scoreMatrix, maxGoals = 6) {
   let maxProb = 0;
-  let bestScore = { home: 1, away: 0 };
+
+  let bestScore = {
+    home: 0,
+    away: 0
+  };
+
   for (let h = 0; h <= maxGoals; h++) {
     for (let a = 0; a <= maxGoals; a++) {
-      if (scoreMatrix[h][a] > maxProb) {
-        maxProb = scoreMatrix[h][a];
-        bestScore = { home: h, away: a };
+      const p = scoreMatrix[h][a];
+
+      if (p > maxProb) {
+        maxProb = p;
+
+        bestScore = {
+          home: h,
+          away: a
+        };
       }
     }
   }
-  return { ...bestScore, probability: maxProb };
+
+  return {
+    ...bestScore,
+    probability: +maxProb.toFixed(4)
+  };
 }

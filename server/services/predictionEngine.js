@@ -1,17 +1,22 @@
 /**
  * ⚽ PREDICTION ENGINE (FINAL CLEAN VERSION)
- * ELO + POISSON + FORM HYBRID
+ * Combines:
+ * - Elo model (probabilities)
+ * - Poisson model (expected goals)
+ * - Form model (recent performance weighting)
+ * - Normalized team stats
  */
 
 // ==========================
-// 📦 IMPORT MODELS (FIXED)
+// 📦 IMPORT MODELS (FIXED PATHS)
 // ==========================
-import { calculateEloProbabilities } from "../lib/eloModel.js";
-import { calculatePoissonProbabilities } from "../lib/poissonModel.js";
+import { calculateEloProbabilities } from "../../src/lib/eloModel.js";
+import { calculatePoissonProbabilities } from "../../src/lib/poissonModel.js";
 import {
   calculateFormScore,
+  calculateMomentum,
   calculateFormProbabilities
-} from "../lib/formModel.js";
+} from "../../src/lib/formModel.js";
 
 // ==========================
 // 📊 BUILD TEAM FEATURES
@@ -37,15 +42,18 @@ export function buildPredictionInput(standings) {
     teams[name] = {
       team: name,
 
+      // ⚽ POISSON FEATURES
       avg_goals_scored: goalsFor / played,
       avg_goals_conceded: goalsAgainst / played,
 
       attack_strength: goalsFor / played || 1,
       defense_strength: goalsAgainst / played || 1,
 
+      // 📊 FORM MODEL
       form_weight: calculateFormScore(formArray),
       form: formArray,
 
+      // ⚡ ELO BASE
       elo_rating: team.elo_rating || 1500,
 
       played,
@@ -59,7 +67,7 @@ export function buildPredictionInput(standings) {
 }
 
 // ==========================
-// ⚽ MATCH ENGINE
+// ⚽ MATCH PREDICTION ENGINE
 // ==========================
 export function buildMatchInput(home, away, teams) {
   const H = teams[home];
@@ -67,19 +75,25 @@ export function buildMatchInput(home, away, teams) {
 
   if (!H || !A) return null;
 
+  // ⚡ ELO MODEL
   const elo = calculateEloProbabilities(
     { elo_rating: H.elo_rating },
     { elo_rating: A.elo_rating }
   );
 
+  // ⚽ POISSON MODEL
   const poisson = calculatePoissonProbabilities(H, A);
 
+  // 📊 FORM MODEL
   const form = calculateFormProbabilities(H, A);
 
   return {
     home,
     away,
 
+    // ==========================
+    // ⚡ ELO OUTPUT
+    // ==========================
     elo: {
       home_win: elo.home_win,
       draw: elo.draw,
@@ -89,6 +103,9 @@ export function buildMatchInput(home, away, teams) {
       elo_diff: elo.elo_diff
     },
 
+    // ==========================
+    // ⚽ POISSON OUTPUT
+    // ==========================
     poisson: {
       home_win: poisson.home_win,
       draw: poisson.draw,
@@ -97,6 +114,9 @@ export function buildMatchInput(home, away, teams) {
       expected_away_goals: poisson.expected_away_goals
     },
 
+    // ==========================
+    // 📊 FORM OUTPUT
+    // ==========================
     form: {
       home_win: form.home_win,
       draw: form.draw,
@@ -105,6 +125,9 @@ export function buildMatchInput(home, away, teams) {
       away_momentum: form.away_momentum
     },
 
+    // ==========================
+    // 📊 TEAM STATS
+    // ==========================
     stats: {
       home_attack: H.avg_goals_scored,
       home_defense: H.avg_goals_conceded,

@@ -91,39 +91,66 @@ export default function Dashboard() {
       const standings = standingsData.standings || [];
       log(`✓ Got ${standings.length} teams from standings`);
 
+      // ✅ DEBUG: Log raw data structure
+      console.log("📊 DEBUG - Full standingsData response:", standingsData);
+      console.log("📊 DEBUG - Standings array:", standings);
+      if (standings.length > 0) {
+        console.log("📊 DEBUG - First standing object:", standings[0]);
+        console.log("📊 DEBUG - Standing keys:", Object.keys(standings[0]));
+      }
+
       const teamMap = {};
 
       for (const standing of standings) {
-        const existing = await apiClient.entities.Team.filter({
-          name: standing.team,
-          league_name: leagueName
-        });
+        try {
+          // ✅ CRITICAL FIX: Handle undefined or invalid entries
+          if (!standing || typeof standing !== 'object') {
+            console.warn("⚠️ Skipping invalid standing (not an object):", standing);
+            continue;
+          }
 
-        const teamData = {
-          name: standing.team,
-          league_name: leagueName,
-          position: standing.position,
-          matches_played: standing.played,
-          wins: standing.won,
-          draws: standing.drawn,
-          losses: standing.lost,
-          goals_scored: standing.goals_for,
-          goals_conceded: standing.goals_against,
-          points: standing.points,
-          form: standing.form || [],
-          attack_strength: standing.attack_strength || 1.0,
-          defense_strength: standing.defense_strength || 1.0,
-          elo_rating: existing[0]?.elo_rating || 1500,
-          season: '2024-25',
-          last_updated: new Date().toISOString()
-        };
+          // ✅ CRITICAL FIX: Extract team name safely
+          const teamName = standing.team || standing.Team?.name || null;
+          
+          if (!teamName) {
+            console.warn("⚠️ Skipping standing - no team name found. Keys:", Object.keys(standing || {}));
+            continue;
+          }
 
-        if (existing.length > 0) {
-          await apiClient.entities.Team.update(existing[0].id, teamData);
-          teamMap[standing.team] = { ...existing[0], ...teamData };
-        } else {
-          const created = await apiClient.entities.Team.create(teamData);
-          teamMap[standing.team] = created;
+          const existing = await apiClient.entities.Team.filter({
+            name: teamName,
+            league_name: leagueName
+          });
+
+          const teamData = {
+            name: teamName,
+            league_name: leagueName,
+            position: standing.position || 0,
+            matches_played: standing.played || standing.playedGames || 0,
+            wins: standing.wins || standing.won || 0,
+            draws: standing.draws || standing.drawn || standing.draw || 0,
+            losses: standing.losses || standing.lost || 0,
+            goals_scored: standing.goals_for || standing.goalsFor || 0,
+            goals_conceded: standing.goals_against || standing.goalsAgainst || 0,
+            points: standing.points || 0,
+            form: Array.isArray(standing.form) ? standing.form : (standing.recent_form || []),
+            attack_strength: standing.attack_strength || 1.0,
+            defense_strength: standing.defense_strength || 1.0,
+            elo_rating: existing[0]?.elo_rating || 1500,
+            season: '2024-25',
+            last_updated: new Date().toISOString()
+          };
+
+          if (existing.length > 0) {
+            await apiClient.entities.Team.update(existing[0].id, teamData);
+            teamMap[teamName] = { ...existing[0], ...teamData };
+          } else {
+            const created = await apiClient.entities.Team.create(teamData);
+            teamMap[teamName] = created;
+          }
+        } catch (standingErr) {
+          console.error(`❌ Error processing standing:`, standing, standingErr);
+          continue;
         }
       }
 
@@ -133,64 +160,76 @@ export default function Dashboard() {
       let predictionsCreated = 0;
 
       for (const fixture of fixtures.slice(0, 10)) {
-        const existing = await apiClient.entities.Match.filter({
-          home_team_name: fixture.home_team,
-          away_team_name: fixture.away_team,
-          league_name: leagueName
-        });
-
-        let matchRecord;
-
-        const matchData = {
-          home_team_name: fixture.home_team,
-          away_team_name: fixture.away_team,
-          league_name: leagueName,
-          match_date: fixture.match_date,
-          status: fixture.status || 'UPCOMING',
-          venue: fixture.venue,
-          round: fixture.round,
-          season: '2024-25',
-          reliability_score: fixture.reliability_score || 0.75,
-          data_sources: fixturesData.sources || []
-        };
-
-        if (existing.length > 0) {
-          await apiClient.entities.Match.update(existing[0].id, matchData);
-          matchRecord = { ...existing[0], ...matchData };
-        } else {
-          matchRecord = await apiClient.entities.Match.create(matchData);
-        }
-
-        const homeTeam = teamMap[fixture.home_team] ||
-          standingsData.standings?.find(s => s.team === fixture.home_team);
-
-        const awayTeam = teamMap[fixture.away_team] ||
-          standingsData.standings?.find(s => s.team === fixture.away_team);
-
-        if (homeTeam || awayTeam) {
-          const predResult = runEnsemble(homeTeam, awayTeam, league);
-
-          const predExisting = await apiClient.entities.Prediction.filter({
-            match_id: matchRecord.id
+        try {
+          const existing = await apiClient.entities.Match.filter({
+            home_team_name: fixture.home_team,
+            away_team_name: fixture.away_team,
+            league_name: leagueName
           });
 
-          const predData = {
-            match_id: matchRecord.id,
+          let matchRecord;
+
+          const matchData = {
             home_team_name: fixture.home_team,
             away_team_name: fixture.away_team,
             league_name: leagueName,
             match_date: fixture.match_date,
-            ...predResult,
+            status: fixture.status || 'UPCOMING',
+            venue: fixture.venue,
+            round: fixture.round,
+            season: '2024-25',
             reliability_score: fixture.reliability_score || 0.75,
-            model_version: 'v1.0'
+            data_sources: fixturesData.sources || []
           };
 
-          if (predExisting.length > 0) {
-            await apiClient.entities.Prediction.update(predExisting[0].id, predData);
+          if (existing.length > 0) {
+            await apiClient.entities.Match.update(existing[0].id, matchData);
+            matchRecord = { ...existing[0], ...matchData };
           } else {
-            await apiClient.entities.Prediction.create(predData);
-            predictionsCreated++;
+            matchRecord = await apiClient.entities.Match.create(matchData);
           }
+
+          // ✅ CRITICAL FIX: Safely find teams with proper name extraction
+          const homeTeam = teamMap[fixture.home_team] ||
+            standings.find(s => {
+              const sName = s?.team || s?.Team?.name;
+              return sName === fixture.home_team;
+            });
+
+          const awayTeam = teamMap[fixture.away_team] ||
+            standings.find(s => {
+              const sName = s?.team || s?.Team?.name;
+              return sName === fixture.away_team;
+            });
+
+          if (homeTeam && awayTeam) {
+            const predResult = runEnsemble(homeTeam, awayTeam, league);
+
+            const predExisting = await apiClient.entities.Prediction.filter({
+              match_id: matchRecord.id
+            });
+
+            const predData = {
+              match_id: matchRecord.id,
+              home_team_name: fixture.home_team,
+              away_team_name: fixture.away_team,
+              league_name: leagueName,
+              match_date: fixture.match_date,
+              ...predResult,
+              reliability_score: fixture.reliability_score || 0.75,
+              model_version: 'v1.0'
+            };
+
+            if (predExisting.length > 0) {
+              await apiClient.entities.Prediction.update(predExisting[0].id, predData);
+            } else {
+              await apiClient.entities.Prediction.create(predData);
+              predictionsCreated++;
+            }
+          }
+        } catch (fixtureErr) {
+          console.error(`❌ Error processing fixture:`, fixture, fixtureErr);
+          continue;
         }
       }
 
@@ -208,6 +247,7 @@ export default function Dashboard() {
       refetchMatches();
       log(`✅ Done! ${leagueName} data updated.`);
     } catch (err) {
+      console.error("❌ Ingest error:", err);
       setIngestError(err.message);
 
       if (jobRecord) {

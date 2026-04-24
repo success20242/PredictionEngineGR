@@ -5,7 +5,12 @@ import express from "express";
 import cors from "cors";
 import { callGemini } from "./services/geminiService.js";
 
-dotenv.config();
+// ⚽ NEW: Sportmonks service
+import {
+  getLiveScores,
+  getFixtures,
+  getStandings,
+} from "./services/sportmonksService.js";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -13,30 +18,34 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
+// ======================
 // TEST ROUTE
+// ======================
 app.get("/", (req, res) => {
   res.json({ status: "Server running" });
 });
 
-// ✅ ADDED: PUBLIC SETTINGS ROUTE (FIX FOR YOUR 404 ERROR)
+// ======================
+// PUBLIC SETTINGS ROUTE (FIX FOR FRONTEND 404)
+// ======================
 app.get("/api/apps/public-settings/:id", (req, res) => {
   const { id } = req.params;
 
-  // basic safety check
   if (!id) {
     return res.status(400).json({ error: "Missing app id" });
   }
 
-  // dev-safe response (accept known + unknown ids)
   return res.json({
     appId: id,
     appName: "Prediction Engine",
     status: "active",
-    environment: "development"
+    environment: "development",
   });
 });
 
-// GEMINI ROUTE
+// ======================
+// GEMINI ROUTE (AI ONLY - NOT DATA SOURCE)
+// ======================
 app.post("/api/llm/invoke", async (req, res) => {
   try {
     const { prompt } = req.body;
@@ -50,6 +59,64 @@ app.post("/api/llm/invoke", async (req, res) => {
   }
 });
 
+// ======================
+// ⚽ SPORTMONKS FOOTBALL API ROUTES
+// ======================
+
+// LIVE SCORES
+app.get("/api/football/live", async (req, res) => {
+  try {
+    const data = await getLiveScores();
+
+    res.json({
+      success: true,
+      matches: data.data || [],
+    });
+  } catch (err) {
+    console.error("Live API error:", err.message);
+    res.status(500).json({ error: "Failed to fetch live matches" });
+  }
+});
+
+// FIXTURES
+app.get("/api/football/fixtures", async (req, res) => {
+  try {
+    const { date } = req.query;
+
+    const data = await getFixtures(
+      date || new Date().toISOString().split("T")[0]
+    );
+
+    res.json({
+      success: true,
+      fixtures: data.data || [],
+    });
+  } catch (err) {
+    console.error("Fixtures API error:", err.message);
+    res.status(500).json({ error: "Failed to fetch fixtures" });
+  }
+});
+
+// STANDINGS
+app.get("/api/football/standings", async (req, res) => {
+  try {
+    const { leagueId } = req.query;
+
+    const data = await getStandings(leagueId || 8);
+
+    res.json({
+      success: true,
+      standings: data.data || [],
+    });
+  } catch (err) {
+    console.error("Standings API error:", err.message);
+    res.status(500).json({ error: "Failed to fetch standings" });
+  }
+});
+
+// ======================
+// START SERVER
+// ======================
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
 });

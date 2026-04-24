@@ -3,11 +3,13 @@
  * Combines:
  * - Elo model (probabilities)
  * - Poisson model (expected goals)
+ * - Form model (recent performance weighting)
  * - Normalized team stats
  */
 
-import { calculateEloProbabilities } from "../lib/eloModel.js";
-import { calculatePoissonProbabilities } from "../lib/poissonModel.js";
+import { calculateEloProbabilities } from "./eloModel.js";
+import { calculatePoissonProbabilities } from "./poissonModel.js";
+import { calculateFormWeight } from "./formModel.js";
 
 // ==========================
 // 📊 BUILD TEAM FEATURES
@@ -26,6 +28,10 @@ export function buildPredictionInput(standings) {
     const draws = team.draws || 0;
     const losses = team.losses || 0;
 
+    const formArray = Array.isArray(team.form)
+      ? team.form
+      : (team.recent_form || "").split("");
+
     teams[name] = {
       team: name,
 
@@ -36,14 +42,12 @@ export function buildPredictionInput(standings) {
       attack_strength: goalsFor / played || 1,
       defense_strength: goalsAgainst / played || 1,
 
-      // 📊 FORM
-      form_weight: (wins * 3 + draws) / (played * 3),
+      // 📊 FORM MODEL (NEW)
+      form_weight: calculateFormWeight(wins, draws, losses, played),
 
-      form: Array.isArray(team.form)
-        ? team.form.join("")
-        : team.recent_form || "",
+      form: formArray,
 
-      // ⚡ ELO
+      // ⚡ ELO BASE
       elo_rating: team.elo_rating || 1500,
 
       played,
@@ -114,6 +118,6 @@ export function buildMatchInput(home, away, teams) {
       away_form: A.form_weight
     },
 
-    model: "ELO + POISSON HYBRID"
+    model: "ELO + POISSON + FORM HYBRID"
   };
 }

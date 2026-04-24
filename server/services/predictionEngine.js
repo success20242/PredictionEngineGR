@@ -9,7 +9,11 @@
 
 import { calculateEloProbabilities } from "./eloModel.js";
 import { calculatePoissonProbabilities } from "./poissonModel.js";
-import { calculateFormWeight } from "./formModel.js";
+import {
+  calculateFormScore,
+  calculateMomentum,
+  calculateFormProbabilities
+} from "./formModel.js";
 
 // ==========================
 // 📊 BUILD TEAM FEATURES
@@ -42,8 +46,8 @@ export function buildPredictionInput(standings) {
       attack_strength: goalsFor / played || 1,
       defense_strength: goalsAgainst / played || 1,
 
-      // 📊 FORM MODEL (NEW)
-      form_weight: calculateFormWeight(wins, draws, losses, played),
+      // 📊 FORM MODEL (FIXED)
+      form_weight: calculateFormScore(formArray),
 
       form: formArray,
 
@@ -78,6 +82,9 @@ export function buildMatchInput(home, away, teams) {
   // ⚽ POISSON MODEL
   const poisson = calculatePoissonProbabilities(H, A);
 
+  // 📊 FORM MODEL (optional enhancement)
+  const form = calculateFormProbabilities(H, A);
+
   return {
     home,
     away,
@@ -103,6 +110,17 @@ export function buildMatchInput(home, away, teams) {
       away_win: poisson.away_win,
       expected_home_goals: poisson.expected_home_goals,
       expected_away_goals: poisson.expected_away_goals
+    },
+
+    // ==========================
+    // 📊 FORM OUTPUT
+    // ==========================
+    form: {
+      home_win: form.home_win,
+      draw: form.draw,
+      away_win: form.away_win,
+      home_momentum: form.home_momentum,
+      away_momentum: form.away_momentum
     },
 
     // ==========================

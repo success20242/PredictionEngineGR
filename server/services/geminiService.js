@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const GEMINI_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent";
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
 
 export const callGemini = async (prompt) => {
   try {
@@ -19,6 +19,7 @@ export const callGemini = async (prompt) => {
           "Content-Type": "application/json",
           "X-goog-api-key": process.env.GEMINI_API_KEY,
         },
+        timeout: 20000, // ⬅️ increase timeout (20s)
       }
     );
 
@@ -28,6 +29,11 @@ export const callGemini = async (prompt) => {
       "Gemini API Error:",
       error.response?.data || error.message
     );
-    throw error;
+
+    // ✅ graceful fallback (CRITICAL for your app)
+    return {
+      fallback: true,
+      message: "AI temporarily unavailable",
+    };
   }
 };

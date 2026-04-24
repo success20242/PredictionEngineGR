@@ -5,14 +5,7 @@ import express from "express";
 import cors from "cors";
 import { callGemini } from "./services/geminiService.js";
 
-// ⚽ PRIMARY DATA (Sportmonks)
-import {
-  getLiveScores,
-  getFixtures,
-  getStandings,
-} from "./services/sportmonksService.js";
-
-// 🧠 FALLBACK SCRAPER (backup system)
+// ⚽ PRIMARY SCRAPER SYSTEM
 import {
   scrapeFixtures,
   scrapeStandings,
@@ -20,14 +13,16 @@ import {
   scrapeH2H,
 } from "./services/fallbackScraper.js";
 
-// 🧠 PREDICTION PIPELINE (Elo + Poisson input builder)
+// 🥈 FALLBACK API (football-data.org)
 import {
-  getStandingsPipeline,
-} from "./services/dataPipeline.js";
+  getFixtures,
+  getStandings,
+  getResults,
+} from "./services/footballDataService.js";
 
-import {
-  buildPredictionInput,
-} from "./services/predictionEngine.js";
+// 🧠 PREDICTION PIPELINE
+import { getStandingsPipeline } from "./services/dataPipeline.js";
+import { buildPredictionInput } from "./services/predictionEngine.js";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -52,7 +47,7 @@ app.get("/api/apps/public-settings/:id", (req, res) => {
     return res.status(400).json({ error: "Missing app id" });
   }
 
-  return res.json({
+  res.json({
     appId: id,
     appName: "Prediction Engine",
     status: "active",
@@ -61,14 +56,12 @@ app.get("/api/apps/public-settings/:id", (req, res) => {
 });
 
 // ======================
-// GEMINI (AI ONLY - NOT DATA SOURCE)
+// GEMINI (AI ONLY)
 // ======================
 app.post("/api/llm/invoke", async (req, res) => {
   try {
     const { prompt } = req.body;
-
     const result = await callGemini(prompt);
-
     res.json(result);
   } catch (err) {
     console.error("LLM Error:", err.message);
@@ -76,127 +69,117 @@ app.post("/api/llm/invoke", async (req, res) => {
   }
 });
 
-// ======================
-// ⚽ LIVE MATCHES
-// ======================
-app.get("/api/football/live", async (req, res) => {
-  try {
-    const data = await getLiveScores();
-
-    if (!data?.data?.length) {
-      const fallback = await scrapeResults();
-      return res.json({ ...fallback, source: "scraper" });
-    }
-
-    res.json({
-      success: true,
-      matches: data.data,
-      source: "sportmonks",
-    });
-  } catch (err) {
-    console.warn("Live fallback triggered:", err.message);
-
-    const fallback = await scrapeResults();
-    res.json({ ...fallback, source: "scraper" });
-  }
-});
 
 // ======================
-// 📅 FIXTURES
+// ⚽ FIXTURES (SCRAPER FIRST)
 // ======================
 app.get("/api/football/fixtures", async (req, res) => {
   try {
-    const { date } = req.query;
+    const scraped = await scrapeFixtures();
 
-    const data = await getFixtures(
-      date || new Date().toISOString().split("T")[0]
-    );
-
-    if (!data?.data?.length) {
-      const fallback = await scrapeFixtures();
-      return res.json({ ...fallback, source: "scraper" });
+    if (scraped?.matches?.length > 0) {
+      return res.json({
+        ...scraped,
+        source: "scraper",
+      });
     }
 
-    res.json({
-      success: true,
-      matches: data.data,
-      source: "sportmonks",
-    });
-  } catch (err) {
-    console.warn("Fixtures fallback triggered:", err.message);
+    const fallback = await getFixtures("PL");
 
-    const fallback = await scrapeFixtures();
-    res.json({ ...fallback, source: "scraper" });
+    res.json({
+      ...fallback,
+      source: "football-data",
+    });
+
+  } catch (err) {
+    console.error("Fixtures error:", err.message);
+
+    const fallback = await getFixtures("PL");
+    res.json(fallback);
   }
 });
 
+
 // ======================
-// 📊 STANDINGS
+// 📊 STANDINGS (SCRAPER FIRST)
 // ======================
 app.get("/api/football/standings", async (req, res) => {
   try {
-    const { leagueId } = req.query;
+    const scraped = await scrapeStandings();
 
-    const data = await getStandings(leagueId || 8);
-
-    if (!data?.data?.length) {
-      const fallback = await scrapeStandings();
-      return res.json({ ...fallback, source: "scraper" });
+    if (scraped?.standings?.length > 0) {
+      return res.json({
+        ...scraped,
+        source: "scraper",
+      });
     }
 
-    res.json({
-      success: true,
-      standings: data.data,
-      source: "sportmonks",
-    });
-  } catch (err) {
-    console.warn("Standings fallback triggered:", err.message);
+    const fallback = await getStandings("PL");
 
-    const fallback = await scrapeStandings();
-    res.json({ ...fallback, source: "scraper" });
+    res.json({
+      ...fallback,
+      source: "football-data",
+    });
+
+  } catch (err) {
+    console.error("Standings error:", err.message);
+
+    const fallback = await getStandings("PL");
+    res.json(fallback);
   }
 });
 
+
 // ======================
-// 📈 RESULTS
+// 📈 RESULTS (SCRAPER FIRST)
 // ======================
 app.get("/api/football/results", async (req, res) => {
   try {
-    const data = await getLiveScores();
+    const scraped = await scrapeResults();
 
-    if (!data?.data?.length) {
-      const fallback = await scrapeResults();
-      return res.json({ ...fallback, source: "scraper" });
+    if (scraped?.results?.length > 0) {
+      return res.json({
+        ...scraped,
+        source: "scraper",
+      });
     }
 
+    const fallback = await getResults("PL");
+
     res.json({
-      success: true,
-      results: data.data,
-      source: "sportmonks",
+      ...fallback,
+      source: "football-data",
     });
+
   } catch (err) {
-    const fallback = await scrapeResults();
-    res.json({ ...fallback, source: "scraper" });
+    console.error("Results error:", err.message);
+
+    const fallback = await getResults("PL");
+    res.json(fallback);
   }
 });
 
+
 // ======================
-// 🔁 H2H
+// 🔁 H2H (SCRAPER ONLY)
 // ======================
 app.get("/api/football/h2h", async (req, res) => {
   try {
     const { home, away } = req.query;
 
-    const fallback = await scrapeH2H(home, away);
+    const data = await scrapeH2H(home, away);
 
-    res.json({ ...fallback, source: "scraper" });
+    res.json({
+      ...data,
+      source: "scraper",
+    });
+
   } catch (err) {
     console.error("H2H error:", err.message);
-
-    const fallback = await scrapeH2H(req.query.home, req.query.away);
-    res.json({ ...fallback, source: "scraper" });
+    res.status(500).json({ error: "H2H failed" });
   }
 });
+
 
 // ======================
 // 🧠 PREDICTION INPUT PIPELINE
@@ -207,7 +190,7 @@ app.get("/api/prediction/input/:leagueId", async (req, res) => {
 
     const { data } = await getStandingsPipeline(leagueId);
 
-    const teams = data.standings || data.data || data;
+    const teams = data?.standings || data?.data || data;
 
     const modelInput = buildPredictionInput(teams);
 
@@ -216,12 +199,13 @@ app.get("/api/prediction/input/:leagueId", async (req, res) => {
       source: data.source || "hybrid",
       teams: modelInput,
     });
+
   } catch (err) {
     console.error("Prediction pipeline error:", err.message);
-
     res.status(500).json({ error: "Prediction input failed" });
   }
 });
+
 
 // ======================
 // START SERVER

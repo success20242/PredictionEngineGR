@@ -22,9 +22,18 @@ export const AuthProvider = ({ children }) => {
       setIsLoadingPublicSettings(true);
       setAuthError(null);
 
-      // Replace Base44 client with your API
+      // 🔧 FIX: prevent /null API calls
+      const appId = appParams.appId;
+
+      if (!appId) {
+        throw new Error("Missing appId in appParams");
+      }
+
       try {
-        const publicSettings = await apiClient.get(`/apps/public-settings/${appParams.appId}`);
+        const publicSettings = await apiClient.get(
+          `/apps/public-settings/${appId}`
+        );
+
         setAppPublicSettings(publicSettings);
 
         if (appParams.token) {
@@ -76,7 +85,6 @@ export const AuthProvider = ({ children }) => {
     try {
       setIsLoadingAuth(true);
 
-      // Replace base44.auth.me()
       const currentUser = await apiClient.get('/auth/me');
 
       setUser(currentUser);
@@ -119,19 +127,21 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      isAuthenticated, 
-      isLoadingAuth,
-      isLoadingPublicSettings,
-      authError,
-      appPublicSettings,
-      authChecked,
-      logout,
-      navigateToLogin,
-      checkUserAuth,
-      checkAppState
-    }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        isAuthenticated,
+        isLoadingAuth,
+        isLoadingPublicSettings,
+        authError,
+        appPublicSettings,
+        authChecked,
+        logout,
+        navigateToLogin,
+        checkUserAuth,
+        checkAppState
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

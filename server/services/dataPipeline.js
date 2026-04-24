@@ -70,14 +70,18 @@ export async function getStandingsPipeline(leagueId) {
     scrapeStandings
   );
 
+  // ✅ SAFETY CHECK 1: Extract raw data from various sources
   const raw =
+    result.data?.standings ||     // Already normalized from footballDataService
     result.data?.matches ||
     result.data?.results ||
-    result.data?.standings ||
     result.data ||
     [];
 
-  const normalized = normalizeMatchData(raw);
+  // ✅ SAFETY CHECK 2: Skip normalization if already normalized
+  const normalized = (Array.isArray(raw) && raw.length > 0 && raw[0].team)
+    ? raw  // Already has normalized .team field
+    : normalizeMatchData(raw);
 
   return {
     data: {
@@ -96,13 +100,17 @@ export async function getResultsPipeline() {
     scrapeResults
   );
 
+  // ✅ SAFETY CHECK 1: Extract raw data from various sources
   const raw =
     result.data?.matches ||
     result.data?.results ||
     result.data ||
     [];
 
-  const normalized = normalizeMatchData(raw);
+  // ✅ SAFETY CHECK 2: Skip normalization if already normalized
+  const normalized = (Array.isArray(raw) && raw.length > 0 && raw[0].team)
+    ? raw  // Already has normalized .team field
+    : normalizeMatchData(raw);
 
   return {
     data: {

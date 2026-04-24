@@ -14,7 +14,7 @@ const headers = {
 };
 
 /**
- * 📊 GET STANDINGS
+ * 📊 GET STANDINGS - WITH SAFETY CHECKS & NORMALIZATION
  */
 export async function getStandings(leagueCode = "PL") {
   try {
@@ -23,12 +23,58 @@ export async function getStandings(leagueCode = "PL") {
       { headers }
     );
 
+    // ✅ SAFETY CHECK 1: Validate response structure
+    if (!res.data?.standings?.[0]?.table || !Array.isArray(res.data.standings[0].table)) {
+      console.warn("⚠️ Invalid standings response structure");
+      return { standings: [], source: "football-data-failed" };
+    }
+
+    // ✅ SAFETY CHECK 2: Map and normalize each entry
+    const normalized = res.data.standings[0].table
+      .map((entry) => {
+        // Guard against undefined or missing team data
+        if (!entry || typeof entry !== 'object') {
+          console.warn("⚠️ Invalid entry skipped:", entry);
+          return null;
+        }
+
+        // Handle nested team object - CRITICAL FIX
+        const teamName = entry.team?.name || entry.Team?.name || "Unknown";
+        
+        if (!teamName || teamName === "Unknown") {
+          console.warn("⚠️ Entry missing team name:", entry);
+          return null;
+        }
+
+        return {
+          team: teamName,
+          position: entry.position || 0,
+          played: entry.playedGames || 0,
+          wins: entry.won || 0,
+          draws: entry.draw || 0,
+          losses: entry.lost || 0,
+          goals_for: entry.goalsFor || 0,
+          goals_against: entry.goalsAgainst || 0,
+          points: entry.points || 0,
+          goal_difference: entry.goalDifference || 0,
+          form: entry.form ? entry.form.split(",").map(f => f.trim()) : [],
+          recent_form: entry.form || "",
+          elo_rating: 1500,
+        };
+      })
+      .filter(team => team !== null); // ✅ Remove nulls
+
+    if (normalized.length === 0) {
+      console.warn("⚠️ No valid standings after normalization");
+      return { standings: [], source: "football-data-failed" };
+    }
+
     return {
       source: "football-data",
-      standings: res.data.standings?.[0]?.table || [],
+      standings: normalized,
     };
   } catch (err) {
-    console.error("Football-data standings error:", err.message);
+    console.error("❌ Football-data standings error:", err.message);
     return { standings: [], source: "football-data-failed" };
   }
 }
@@ -48,7 +94,7 @@ export async function getFixtures(leagueCode = "PL") {
       matches: res.data.matches || [],
     };
   } catch (err) {
-    console.error("Football-data fixtures error:", err.message);
+    console.error("❌ Football-data fixtures error:", err.message);
     return { matches: [], source: "football-data-failed" };
   }
 }
@@ -68,7 +114,7 @@ export async function getResults(leagueCode = "PL") {
       results: res.data.matches || [],
     };
   } catch (err) {
-    console.error("Football-data results error:", err.message);
+    console.error("❌ Football-data results error:", err.message);
     return { results: [], source: "football-data-failed" };
   }
 }

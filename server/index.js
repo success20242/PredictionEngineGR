@@ -18,6 +18,24 @@ app.get("/", (req, res) => {
   res.json({ status: "Server running" });
 });
 
+// ✅ ADDED: PUBLIC SETTINGS ROUTE (FIX FOR YOUR 404 ERROR)
+app.get("/api/apps/public-settings/:id", (req, res) => {
+  const { id } = req.params;
+
+  // basic safety check
+  if (!id) {
+    return res.status(400).json({ error: "Missing app id" });
+  }
+
+  // dev-safe response (accept known + unknown ids)
+  return res.json({
+    appId: id,
+    appName: "Prediction Engine",
+    status: "active",
+    environment: "development"
+  });
+});
+
 // GEMINI ROUTE
 app.post("/api/llm/invoke", async (req, res) => {
   try {

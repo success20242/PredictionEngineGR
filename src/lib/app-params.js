@@ -51,11 +51,14 @@ const getAppParams = () => {
 		storage.removeItem('token');
 	}
 
-	// ✅ FIXED: safe fallback so app NEVER breaks
-	const appId =
-		getAppParamValue("app_id", {
-			defaultValue: import.meta.env.VITE_APP_ID || "default-app-id"
-		});
+	// ✅ SAFE APP ID FIX (prevents null / undefined / "default-app-id" breaking API calls)
+	let appId = getAppParamValue("app_id", {
+		defaultValue: import.meta.env.VITE_APP_ID
+	});
+
+	if (!appId || appId === "null" || appId === "undefined") {
+		appId = import.meta.env.VITE_APP_ID || "local-dev";
+	}
 
 	return {
 		appId,

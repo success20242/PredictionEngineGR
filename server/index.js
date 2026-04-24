@@ -101,10 +101,16 @@ app.get("/api/football/fixtures", async (req, res) => {
 
 
 // ======================
-// 📊 STANDINGS (SCRAPER FIRST)
+// 📊 STANDINGS (SCRAPER FIRST) - WITH LEAGUE SUPPORT
 // ======================
 app.get("/api/football/standings", async (req, res) => {
   try {
+    // ✅ EXTRACT LEAGUE FROM QUERY PARAMS
+    const { league } = req.query;
+    const leagueCode = league || "PL";
+
+    console.log(`📊 Fetching standings for: ${leagueCode}`);
+
     const scraped = await scrapeStandings();
 
     if (scraped?.standings?.length > 0) {
@@ -114,7 +120,8 @@ app.get("/api/football/standings", async (req, res) => {
       });
     }
 
-    const fallback = await getStandings("PL");
+    // ✅ USE LEAGUE PARAMETER
+    const fallback = await getStandings(leagueCode);
 
     res.json({
       ...fallback,
@@ -211,5 +218,5 @@ app.get("/api/prediction/input/:leagueId", async (req, res) => {
 // START SERVER
 // ======================
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(`🚀 Server running on http://localhost:5000`);
 });

@@ -1,199 +1,255 @@
 /**
- * 🌐 FALLBACK SCRAPER ENGINE
- * Scrapes football data from public sources when Sportmonks fails
- * Returns RAW structured data only (no calculations)
+ * 🌐 HYBRID FALLBACK SCRAPER ENGINE
+ * Multi-source scraping + derived team stats
+ * Compatible with your backend routes
  */
 
 import axios from "axios";
 import * as cheerio from "cheerio";
 
-// 🔗 Trusted sources
+// ==========================
+// 🔗 SOURCES
+// ==========================
 const SOURCES = [
   {
     name: "bbc",
-    url: "https://www.bbc.com/sport/football/scores-fixtures"
+    url: "https://www.bbc.com/sport/football/scores-fixtures",
   },
   {
-    name: "sky_sports",
-    url: "https://www.skysports.com/football-fixtures-results"
+    name: "sky",
+    url: "https://www.skysports.com/football-results",
   },
   {
     name: "espn",
-    url: "https://www.espn.com/soccer/scoreboard"
-  }
+    url: "https://www.espn.com/soccer/scoreboard",
+  },
 ];
 
-// 🧠 Normalize team names (keep consistent with your engine)
+// ==========================
+// 🧼 HELPERS
+// ==========================
 function cleanTeamName(name) {
   return name?.replace(/\s+/g, " ").trim();
 }
 
-/**
- * ⚽ SCRAPE FIXTURES + RESULTS
- */
-export async function scrapeMatches() {
-  const results = [];
+// ==========================
+// 🕷️ SCRAPE MATCHES (MULTI SOURCE)
+// ==========================
+async function scrapeMatches() {
+  const matches = [];
 
   for (const source of SOURCES) {
     try {
       const res = await axios.get(source.url, {
         headers: {
           "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         },
-        timeout: 10000
+        timeout: 10000,
       });
 
       const $ = cheerio.load(res.data);
 
-      // 🟡 BBC parsing (most stable)
+      // ===== BBC =====
       if (source.name === "bbc") {
-        $(".qa-match-block").each((_, el) => {
-          const home = cleanTeamName($(el).find(".sp-c-fixture__team--home").text());
-          const away = cleanTeamName($(el).find(".sp-c-fixture__team--away").text());
-          const score = $(el).find(".sp-c-fixture__number--ft").text();
+        $(".sp-c-fixture").each((_, el) => {
+          const home = cleanTeamName(
+            $(el)
+              .find(".sp-c-fixture__team--home .sp-c-fixture__team-name")
+              .text()
+          );
 
-          results.push({
+          const away = cleanTeamName(
+            $(el)
+              .find(".sp-c-fixture__team--away .sp-c-fixture__team-name")
+              .text()
+          );
+
+          const score = $(el)
+            .find(".sp-c-fixture__number--ft")
+            .text()
+            .trim();
+
+          if (!home || !away || !score) return;
+
+          const [hg, ag] = score.split("-").map(Number);
+          if (isNaN(hg) || isNaN(ag)) return;
+
+          matches.push({
             source: "bbc",
             home_team: home,
             away_team: away,
-            score: score || null,
-            date: new Date().toISOString()
+            home_goals: hg,
+            away_goals: ag,
           });
         });
       }
 
-      // 🔵 Sky Sports parsing
-      if (source.name === "sky_sports") {
+      // ===== SKY =====
+      if (source.name === "sky") {
         $(".fixres__item").each((_, el) => {
-          const teams = $(el).find(".swap-text__target").map((i, t) => $(t).text()).get();
+          const teams = $(el)
+            .find(".swap-text__target")
+            .map((i, t) => $(t).text())
+            .get();
 
           if (teams.length >= 2) {
-            results.push({
-              source: "sky_sports",
+            matches.push({
+              source: "sky",
               home_team: cleanTeamName(teams[0]),
               away_team: cleanTeamName(teams[1]),
-              score: null,
-              date: new Date().toISOString()
+              home_goals: null,
+              away_goals: null,
             });
           }
         });
       }
 
-      // 🔴 ESPN parsing
+      // ===== ESPN =====
       if (source.name === "espn") {
         $(".Scoreboard").each((_, el) => {
-          const teams = $(el).find(".ScoreCell__TeamName").map((i, t) => $(t).text()).get();
+          const teams = $(el)
+            .find(".ScoreCell__TeamName")
+            .map((i, t) => $(t).text())
+            .get();
 
           if (teams.length >= 2) {
-            results.push({
+            matches.push({
               source: "espn",
               home_team: cleanTeamName(teams[0]),
               away_team: cleanTeamName(teams[1]),
-              score: null,
-              date: new Date().toISOString()
+              home_goals: null,
+              away_goals: null,
             });
           }
         });
       }
-
     } catch (err) {
-      console.error(`❌ Scraping failed for ${source.name}:`, err.message);
+      console.error(`❌ ${source.name} scrape failed:`, err.message);
     }
   }
 
-  return results;
+  return matches;
 }
 
-/**
- * 📊 BUILD TEAM RAW DATA FROM MATCHES
- * (NO calculations like Elo here — just structure)
- */
-export function buildTeamDataset(matches) {
+// ==========================
+// 🧠 BUILD TEAM STATS
+// ==========================
+function buildTeamStats(matches) {
   const teams = {};
 
-  matches.forEach((m) => {
-    if (!m.home_team || !m.away_team) return;
+  for (const m of matches) {
+    if (!m.home_team || !m.away_team) continue;
 
-    // init teams
-    if (!teams[m.home_team]) {
-      teams[m.home_team] = createEmptyTeam(m.home_team);
+    if (!teams[m.home_team]) initTeam(teams, m.home_team);
+    if (!teams[m.away_team]) initTeam(teams, m.away_team);
+
+    // only update stats if score exists
+    if (m.home_goals !== null && m.away_goals !== null) {
+      updateStats(teams[m.home_team], m.home_goals, m.away_goals);
+      updateStats(teams[m.away_team], m.away_goals, m.home_goals);
     }
-    if (!teams[m.away_team]) {
-      teams[m.away_team] = createEmptyTeam(m.away_team);
-    }
+  }
 
-    // increment played
-    teams[m.home_team].played += 1;
-    teams[m.away_team].played += 1;
-
-    // parse score if exists
-    if (m.score && m.score.includes("-")) {
-      const [h, a] = m.score.split("-").map(Number);
-
-      teams[m.home_team].goals_for += h;
-      teams[m.home_team].goals_against += a;
-
-      teams[m.away_team].goals_for += a;
-      teams[m.away_team].goals_against += h;
-
-      // results
-      if (h > a) {
-        teams[m.home_team].wins++;
-        teams[m.away_team].losses++;
-        updateForm(teams[m.home_team], "W");
-        updateForm(teams[m.away_team], "L");
-      } else if (h < a) {
-        teams[m.away_team].wins++;
-        teams[m.home_team].losses++;
-        updateForm(teams[m.away_team], "W");
-        updateForm(teams[m.home_team], "L");
-      } else {
-        teams[m.home_team].draws++;
-        teams[m.away_team].draws++;
-        updateForm(teams[m.home_team], "D");
-        updateForm(teams[m.away_team], "D");
-      }
-    }
-  });
-
-  return Object.values(teams);
+  return Object.values(teams).map(finalizeTeamStats);
 }
 
-// 🧱 Empty team template
-function createEmptyTeam(name) {
-  return {
-    team_name: name,
-    league: "Unknown",
+function initTeam(store, name) {
+  store[name] = {
+    team: name,
     played: 0,
     wins: 0,
     draws: 0,
     losses: 0,
     goals_for: 0,
     goals_against: 0,
-    form: []
+    form: [],
   };
 }
 
-// 🔁 Update last 5 form
-function updateForm(team, result) {
-  team.form.push(result);
-  if (team.form.length > 5) {
-    team.form.shift();
+function updateStats(team, gf, ga) {
+  team.played++;
+  team.goals_for += gf;
+  team.goals_against += ga;
+
+  if (gf > ga) {
+    team.wins++;
+    pushForm(team, "W");
+  } else if (gf === ga) {
+    team.draws++;
+    pushForm(team, "D");
+  } else {
+    team.losses++;
+    pushForm(team, "L");
   }
 }
 
-/**
- * 🚀 MAIN FALLBACK ENTRY
- */
-export async function getFallbackData() {
+function pushForm(team, result) {
+  team.form.push(result);
+  if (team.form.length > 5) team.form.shift();
+}
+
+function finalizeTeamStats(team) {
+  return {
+    ...team,
+    avg_goals_scored: +(team.goals_for / team.played || 0).toFixed(2),
+    avg_goals_conceded: +(team.goals_against / team.played || 0).toFixed(2),
+    recent_form: team.form.join(""),
+    elo_rating: 1500, // your system updates this
+  };
+}
+
+// ==========================
+// 📅 FIXTURES
+// ==========================
+export async function scrapeFixtures() {
   const matches = await scrapeMatches();
-  const teams = buildTeamDataset(matches);
 
   return {
-    source: "fallback_scraper",
     matches,
-    teams,
-    fetched_at: new Date().toISOString()
+    sources: ["bbc", "sky", "espn"],
+  };
+}
+
+// ==========================
+// 📊 STANDINGS
+// ==========================
+export async function scrapeStandings() {
+  const matches = await scrapeMatches();
+  const standings = buildTeamStats(matches);
+
+  return {
+    standings,
+    sources: ["bbc", "sky", "espn"],
+  };
+}
+
+// ==========================
+// 📈 RESULTS
+// ==========================
+export async function scrapeResults() {
+  const matches = await scrapeMatches();
+
+  return {
+    results: matches,
+    sources: ["bbc", "sky", "espn"],
+  };
+}
+
+// ==========================
+// 🔁 H2H
+// ==========================
+export async function scrapeH2H(home, away) {
+  const matches = await scrapeMatches();
+
+  const filtered = matches.filter(
+    (m) =>
+      (m.home_team === home && m.away_team === away) ||
+      (m.home_team === away && m.away_team === home)
+  );
+
+  return {
+    h2h_matches: filtered.slice(-5),
+    sources: ["bbc", "sky", "espn"],
   };
 }

@@ -1,6 +1,15 @@
 /**
- * ⚽ DATA PIPELINE LAYER (CLEAN + NORMALIZED)
+ * ⚽ DATA PIPELINE LAYER (SCRAPER FIRST SYSTEM)
+ * - Scraper PRIMARY
+ * - football-data.org fallback
+ * - Normalized output for prediction engine
  */
+
+import {
+  getFixtures,
+  getStandings,
+  getLiveScores,
+} from "./footballDataService.js";
 
 import {
   scrapeFixtures,
@@ -8,106 +17,92 @@ import {
   scrapeResults,
 } from "./fallbackScraper.js";
 
-import {
-  getFixtures,
-  getStandings,
-  getResults,
-} from "./footballDataService.js";
-
 import { normalizeMatchData } from "./dataNormalizer.js";
 
 // ==========================
-// 🔁 GENERIC FALLBACK WRAPPER
+// 🔁 FALLBACK WRAPPER
 // ==========================
 async function getDataWithFallback(primaryFn, fallbackFn) {
   try {
     const data = await primaryFn();
 
     const hasData =
-      data?.data ||
-      data?.matches ||
-      data?.standings ||
-      data?.results;
+      Array.isArray(data) ||
+      data?.matches?.length ||
+      data?.standings?.length ||
+      data?.results?.length;
 
     if (hasData) {
-      return {
-        data,
-        source: "primary",
-      };
+      return { data, source: "football-data.org" };
     }
 
-    throw new Error("Empty primary response");
+    throw new Error("Primary empty");
   } catch (err) {
-    console.warn("⚠️ Primary failed → fallback:", err.message);
+    console.warn("⚠️ Primary failed → scraper activated");
 
     const fallback = await fallbackFn();
 
-    return {
-      data: fallback,
-      source: "fallback",
-    };
+    return { data: fallback, source: "scraper" };
   }
 }
 
 // ==========================
-// ⚽ FIXTURES PIPELINE
+// ⚽ FIXTURES
 // ==========================
 export async function getFixturesPipeline(date) {
-  const result = await getDataWithFallback(
-    () => scrapeFixtures(date),
-    () => getFixtures(date)
+  return getDataWithFallback(
+    () => getFixtures(date),
+    scrapeFixtures
   );
-
-  const raw = result.data?.matches || result.data || [];
-
-  const normalized = normalizeMatchData(raw);
-
-  return {
-    data: {
-      fixtures: normalized,
-    },
-    source: result.source,
-  };
 }
 
 // ==========================
-// 📊 STANDINGS PIPELINE
+// 📊 STANDINGS + NORMALIZATION (IMPORTANT)
 // ==========================
 export async function getStandingsPipeline(leagueId) {
   const result = await getDataWithFallback(
-    () => scrapeStandings(leagueId),
-    () => getStandings(leagueId)
+    () => getStandings(leagueId),
+    scrapeStandings
   );
 
-  const raw = result.data?.standings || result.data || [];
+  const raw =
+    result.data?.matches ||
+    result.data?.results ||
+    result.data?.standings ||
+    result.data ||
+    [];
 
   const normalized = normalizeMatchData(raw);
 
   return {
     data: {
-      standings: normalized,
+      standings: normalized
     },
-    source: result.source,
+    source: result.source
   };
 }
 
 // ==========================
-// 📈 RESULTS PIPELINE
+// 📈 RESULTS + NORMALIZATION
 // ==========================
 export async function getResultsPipeline() {
   const result = await getDataWithFallback(
-    () => scrapeResults(),
-    () => getResults()
+    () => getLiveScores(),
+    scrapeResults
   );
 
-  const raw = result.data?.results || result.data?.matches || result.data || [];
+  const raw =
+    result.data?.matches ||
+    result.data?.results ||
+    result.data ||
+    [];
 
   const normalized = normalizeMatchData(raw);
 
   return {
     data: {
-      results: normalized,
+      results: normalized
     },
-    source: result.source,
+    source: result.source
   };
 }

@@ -1,9 +1,14 @@
 /**
  * ⚽ PREDICTION ENGINE CONNECTOR
  * Consumes normalized team stats
- * Outputs Elo + Poisson-ready structure
+ * Integrates Elo probability model + Poisson inputs
  */
 
+import { calculateEloProbabilities } from "../lib/eloModel.js";
+
+// ==========================
+// 📊 BUILD TEAM FEATURE SET
+// ==========================
 export function buildPredictionInput(standings) {
   const teams = {};
 
@@ -26,23 +31,22 @@ export function buildPredictionInput(standings) {
     teams[name] = {
       team: name,
 
-      // 🔥 POISSON INPUTS
+      // ⚽ POISSON FEATURES
       avg_goals_scored: goalsFor / played,
       avg_goals_conceded: goalsAgainst / played,
 
-      // ⚽ FORM FACTOR
-      form_weight:
-        (wins * 3 + draws * 1) / (played * 3),
+      // 📊 FORM STRENGTH
+      form_weight: (wins * 3 + draws * 1) / (played * 3),
 
-      // 📊 ELO BASE
-      elo: team.elo_rating || 1500,
+      // ⚡ ELO RATING (base)
+      elo_rating: team.elo_rating || 1500,
 
       // 📉 STRUCTURE
       played,
       wins,
       draws,
       losses,
-      form,
+      form
     };
   }
 
@@ -50,7 +54,7 @@ export function buildPredictionInput(standings) {
 }
 
 // ==========================
-// ⚽ MATCH PROBABILITY INPUT
+// ⚽ MATCH INPUT + ELO INTEGRATION
 // ==========================
 export function buildMatchInput(home, away, teams) {
   const H = teams[home];
@@ -58,20 +62,39 @@ export function buildMatchInput(home, away, teams) {
 
   if (!H || !A) return null;
 
+  // 🧠 APPLY ELO MODEL HERE
+  const elo = calculateEloProbabilities(
+    { elo_rating: H.elo_rating },
+    { elo_rating: A.elo_rating }
+  );
+
   return {
     home,
     away,
 
+    // ⚽ POISSON ATTACK/DEFENSE
     home_attack: H.avg_goals_scored,
     home_defense: H.avg_goals_conceded,
 
     away_attack: A.avg_goals_scored,
     away_defense: A.avg_goals_conceded,
 
-    home_elo: H.elo,
-    away_elo: A.elo,
+    // ⚡ ELO LAYER (CONNECTED)
+    home_elo: elo.home_elo,
+    away_elo: elo.away_elo,
+    elo_diff: elo.elo_diff,
 
+    // 🎯 WIN PROBABILITIES
+    probabilities: {
+      home_win: elo.home_win,
+      draw: elo.draw,
+      away_win: elo.away_win
+    },
+
+    // 📊 FORM SIGNALS
     home_form: H.form_weight,
     away_form: A.form_weight,
+
+    model: "elo + poisson-ready"
   };
 }

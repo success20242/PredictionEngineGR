@@ -1,11 +1,24 @@
 /**
  * DATA INGESTION ENGINE
- * Fetches football data via LLM with web search (multi-source aggregation).
+ * Fetches football data via Sportmonks (primary)
+ * with LLM fallback for reasoning only.
  * Normalizes team names, validates data, assigns reliability scores.
  */
 
 import { apiClient } from '@/api/apiClient';
 
+/**
+ * ⚽ SPORTMONKS CONFIG
+ */
+const SPORTMONKS_KEY =
+  process.env.SPORTMONKS_KEY || process.env.VITE_SPORTMONKS_KEY;
+
+const sportmonksBase =
+  "https://api.sportmonks.com/api/v3/football";
+
+/**
+ * 🏆 SUPPORTED LEAGUES
+ */
 export const SUPPORTED_LEAGUES = [
   { name: 'Premier League', country: 'England', short: 'EPL', avg_goals: 2.82 },
   { name: 'La Liga', country: 'Spain', short: 'LaLiga', avg_goals: 2.58 },
@@ -15,7 +28,9 @@ export const SUPPORTED_LEAGUES = [
   { name: 'Champions League', country: 'Europe', short: 'UCL', avg_goals: 2.91 }
 ];
 
-// Team name normalization map
+/**
+ * 🧠 TEAM NORMALIZATION MAP
+ */
 const TEAM_ALIASES = {
   'man utd': 'Manchester United', 'man city': 'Manchester City',
   'man united': 'Manchester United', 'manchester utd': 'Manchester United',
@@ -24,17 +39,12 @@ const TEAM_ALIASES = {
   'west ham': 'West Ham United', 'leicester': 'Leicester City',
   'brighton': 'Brighton & Hove Albion', 'norwich': 'Norwich City',
   'real madrid': 'Real Madrid', 'barcelona': 'FC Barcelona', 'barca': 'FC Barcelona',
-  'atletico': 'Atletico Madrid', 'atletico madrid': 'Atletico Madrid',
-  'sevilla': 'Sevilla FC', 'valencia': 'Valencia CF',
-  'juventus': 'Juventus FC', 'juve': 'Juventus FC',
-  'inter': 'Inter Milan', 'inter milan': 'Inter Milan',
-  'ac milan': 'AC Milan', 'milan': 'AC Milan',
+  'atletico': 'Atletico Madrid', 'sevilla': 'Sevilla FC',
+  'valencia': 'Valencia CF', 'juventus': 'Juventus FC',
+  'inter': 'Inter Milan', 'ac milan': 'AC Milan',
   'napoli': 'SSC Napoli', 'roma': 'AS Roma',
-  'dortmund': 'Borussia Dortmund', 'bvb': 'Borussia Dortmund',
-  'bayern': 'Bayern Munich', 'rb leipzig': 'RB Leipzig',
-  'psg': 'Paris Saint-Germain', 'paris': 'Paris Saint-Germain',
-  'lyon': 'Olympique Lyonnais', 'marseille': 'Olympique de Marseille',
-  'monaco': 'AS Monaco', 'lille': 'Lille OSC'
+  'dortmund': 'Borussia Dortmund', 'bayern': 'Bayern Munich',
+  'psg': 'Paris Saint-Germain', 'lyon': 'Olympique Lyonnais'
 };
 
 export function normalizeTeamName(name) {
@@ -43,57 +53,113 @@ export function normalizeTeamName(name) {
   return TEAM_ALIASES[lower] || name.trim();
 }
 
+/**
+ * 📊 RELIABILITY SCORE ENGINE
+ */
 export function calculateReliabilityScore({ sourcesCount, dataFreshness, completeness }) {
   const sourceScore = Math.min(1, sourcesCount / 3);
   const freshnessScore = Math.max(0, 1 - dataFreshness / 60);
   const completenessScore = completeness || 0.7;
 
-  const reliability = (sourceScore * 0.35 + freshnessScore * 0.35 + completenessScore * 0.30);
-  return parseFloat(reliability.toFixed(3));
+  return parseFloat(
+    (sourceScore * 0.35 + freshnessScore * 0.35 + completenessScore * 0.30).toFixed(3)
+  );
 }
 
 /**
- * 🔁 Generic LLM wrapper (replaces Base44 InvokeLLM)
+ * 🔁 HYBRID DATA ENGINE (SPORTMONKS + LLM fallback)
  */
 async function callLLM(prompt, schema) {
-  const response = await apiClient.post('/llm/invoke', {
-    prompt,
-    add_context_from_internet: true,
-    response_json_schema: schema
-  });
+  try {
+    const p = prompt.toLowerCase();
 
-  return response;
+    // ⚽ FIXTURES
+    if (p.includes("fixtures") || p.includes("upcoming")) {
+      const res = await fetch(
+        `${sportmonksBase}/fixtures?api_token=${SPORTMONKS_KEY}`
+      );
+      const data = await res.json();
+
+      return {
+        matches: data.data || [],
+        sources: ["sportmonks"],
+        fetched_at: new Date().toISOString()
+      };
+    }
+
+    // 📊 STANDINGS
+    if (p.includes("standings")) {
+      const res = await fetch(
+        `${sportmonksBase}/standings?api_token=${SPORTMONKS_KEY}`
+      );
+      const data = await res.json();
+
+      return {
+        standings: data.data || [],
+        sources: ["sportmonks"],
+        last_updated: new Date().toISOString()
+      };
+    }
+
+    // 📈 RESULTS / LIVESCORES
+    if (p.includes("results") || p.includes("livescores")) {
+      const res = await fetch(
+        `${sportmonksBase}/livescores?api_token=${SPORTMONKS_KEY}`
+      );
+      const data = await res.json();
+
+      return {
+        results: data.data || [],
+        sources: ["sportmonks"]
+      };
+    }
+
+    // 🤝 HEAD TO HEAD
+    if (p.includes("head-to-head") || p.includes("h2h")) {
+      const res = await fetch(
+        `${sportmonksBase}/fixtures/head-to-head?api_token=${SPORTMONKS_KEY}`
+      );
+      const data = await res.json();
+
+      return {
+        h2h_matches: data.data || [],
+        sources: ["sportmonks"]
+      };
+    }
+
+    // 🧠 FALLBACK → LLM ONLY FOR TEXT REASONING
+    const response = await apiClient.post('/llm/invoke', {
+      prompt,
+      add_context_from_internet: false,
+      response_json_schema: schema
+    });
+
+    return response.data || response;
+  } catch (err) {
+    console.error("Data ingestion error:", err.message);
+
+    return {
+      matches: [],
+      standings: [],
+      results: [],
+      h2h_matches: [],
+      sources: []
+    };
+  }
 }
 
+/**
+ * ⚽ FIXTURE FETCH
+ */
 export async function fetchUpcomingFixtures(leagueName, onProgress) {
   const league = SUPPORTED_LEAGUES.find(l => l.name === leagueName);
   if (!league) throw new Error(`Unsupported league: ${leagueName}`);
 
   onProgress?.(`Fetching fixtures for ${leagueName}...`);
 
-  const prompt = `You are a football data aggregator. Fetch the REAL upcoming fixtures for the ${leagueName} (${league.country}) for the next 14 days from today (${new Date().toISOString().split('T')[0]}).
+  const prompt = `Fetch upcoming fixtures for ${leagueName}`;
 
-Search multiple sources: official league website, BBC Sport, Sky Sports, ESPN FC, goal.com.
-
-Return ONLY JSON:
-{
-  "league": "${leagueName}",
-  "season": "2024-25",
-  "fetched_at": "<ISO timestamp>",
-  "sources": [],
-  "matches": []
-}`;
-
-  const result = await callLLM(prompt, {
-    type: 'object',
-    properties: {
-      league: { type: 'string' },
-      season: { type: 'string' },
-      fetched_at: { type: 'string' },
-      sources: { type: 'array', items: { type: 'string' } },
-      matches: { type: 'array', items: { type: 'object' } }
-    }
-  });
+  const result = await callLLM(prompt);
 
   onProgress?.(`Processing ${result.matches?.length || 0} fixtures...`);
 
@@ -107,51 +173,36 @@ Return ONLY JSON:
       reliability_score: calculateReliabilityScore({
         sourcesCount: result.sources?.length || 1,
         dataFreshness: 2,
-        completeness: m.venue ? 1.0 : 0.8
+        completeness: m.venue ? 1 : 0.8
       })
     }))
   };
 }
 
+/**
+ * 📊 STANDINGS
+ */
 export async function fetchLeagueStandings(leagueName, onProgress) {
   onProgress?.(`Fetching standings for ${leagueName}...`);
 
-  const prompt = `Fetch CURRENT ${leagueName} standings for 2024-25 season. Return ONLY JSON.`;
-
-  const result = await callLLM(prompt, {
-    type: 'object',
-    properties: {
-      league: { type: 'string' },
-      season: { type: 'string' },
-      last_updated: { type: 'string' },
-      sources: { type: 'array', items: { type: 'string' } },
-      standings: { type: 'array', items: { type: 'object' } }
-    }
-  });
+  const result = await callLLM(`Fetch standings for ${leagueName}`);
 
   return {
     ...result,
     standings: (result.standings || []).map(s => ({
       ...s,
-      team: normalizeTeamName(s.team),
-      attack_strength: calculateAttackStrength(s),
-      defense_strength: calculateDefenseStrength(s)
+      team: normalizeTeamName(s.team)
     }))
   };
 }
 
+/**
+ * 📈 RESULTS
+ */
 export async function fetchRecentResults(leagueName, onProgress) {
-  onProgress?.(`Fetching recent results for ${leagueName}...`);
+  onProgress?.(`Fetching results for ${leagueName}...`);
 
-  const prompt = `Fetch last 10 results for ${leagueName}. Return ONLY JSON.`;
-
-  const result = await callLLM(prompt, {
-    type: 'object',
-    properties: {
-      league: { type: 'string' },
-      results: { type: 'array', items: { type: 'object' } }
-    }
-  });
+  const result = await callLLM(`Fetch results for ${leagueName}`);
 
   return {
     ...result,
@@ -164,22 +215,18 @@ export async function fetchRecentResults(leagueName, onProgress) {
   };
 }
 
+/**
+ * 🤝 H2H
+ */
 export async function fetchHeadToHead(homeTeam, awayTeam, onProgress) {
   onProgress?.(`Fetching H2H: ${homeTeam} vs ${awayTeam}...`);
 
-  const prompt = `Fetch last 5 head-to-head matches between ${homeTeam} and ${awayTeam}. Return ONLY JSON.`;
-
-  return await callLLM(prompt, {
-    type: 'object',
-    properties: {
-      home_team: { type: 'string' },
-      away_team: { type: 'string' },
-      h2h_matches: { type: 'array', items: { type: 'object' } },
-      summary: { type: 'object' }
-    }
-  });
+  return await callLLM(`head-to-head ${homeTeam} vs ${awayTeam}`);
 }
 
+/**
+ * 📊 STRENGTH METRICS
+ */
 function calculateAttackStrength(teamStanding) {
   if (!teamStanding?.played) return 1.0;
   return (teamStanding.goals_for / teamStanding.played) / 1.4;

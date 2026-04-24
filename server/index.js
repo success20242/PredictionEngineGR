@@ -5,12 +5,20 @@ import express from "express";
 import cors from "cors";
 import { callGemini } from "./services/geminiService.js";
 
-// ⚽ NEW: Sportmonks service
+// ⚽ Sportmonks service (PRIMARY)
 import {
   getLiveScores,
   getFixtures,
   getStandings,
 } from "./services/sportmonksService.js";
+
+// 🧠 Fallback scraper (BACKUP)
+import {
+  scrapeFixtures,
+  scrapeStandings,
+  scrapeResults,
+  scrapeH2H,
+} from "./services/fallbackScraper.js";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -26,7 +34,7 @@ app.get("/", (req, res) => {
 });
 
 // ======================
-// PUBLIC SETTINGS ROUTE (FIX FOR FRONTEND 404)
+// PUBLIC SETTINGS ROUTE
 // ======================
 app.get("/api/apps/public-settings/:id", (req, res) => {
   const { id } = req.params;
@@ -44,7 +52,7 @@ app.get("/api/apps/public-settings/:id", (req, res) => {
 });
 
 // ======================
-// GEMINI ROUTE (AI ONLY - NOT DATA SOURCE)
+// GEMINI ROUTE (AI ONLY)
 // ======================
 app.post("/api/llm/invoke", async (req, res) => {
   try {
@@ -60,25 +68,34 @@ app.post("/api/llm/invoke", async (req, res) => {
 });
 
 // ======================
-// ⚽ SPORTMONKS FOOTBALL API ROUTES
+// ⚽ LIVE MATCHES
 // ======================
-
-// LIVE SCORES
 app.get("/api/football/live", async (req, res) => {
   try {
     const data = await getLiveScores();
 
+    if (!data?.data?.length) {
+      console.warn("⚠️ Live fallback triggered");
+      const fallback = await scrapeResults();
+      return res.json(fallback);
+    }
+
     res.json({
       success: true,
-      matches: data.data || [],
+      matches: data.data,
+      source: "sportmonks",
     });
   } catch (err) {
-    console.error("Live API error:", err.message);
-    res.status(500).json({ error: "Failed to fetch live matches" });
+    console.warn("Live API failed → fallback:", err.message);
+
+    const fallback = await scrapeResults();
+    res.json({ ...fallback, source: "scraper" });
   }
 });
 
-// FIXTURES
+// ======================
+// 📅 FIXTURES
+// ======================
 app.get("/api/football/fixtures", async (req, res) => {
   try {
     const { date } = req.query;
@@ -87,30 +104,92 @@ app.get("/api/football/fixtures", async (req, res) => {
       date || new Date().toISOString().split("T")[0]
     );
 
+    if (!data?.data?.length) {
+      console.warn("⚠️ Fixtures fallback triggered");
+      const fallback = await scrapeFixtures();
+      return res.json({ ...fallback, source: "scraper" });
+    }
+
     res.json({
       success: true,
-      fixtures: data.data || [],
+      matches: data.data,
+      source: "sportmonks",
     });
   } catch (err) {
-    console.error("Fixtures API error:", err.message);
-    res.status(500).json({ error: "Failed to fetch fixtures" });
+    console.warn("Fixtures API failed → fallback:", err.message);
+
+    const fallback = await scrapeFixtures();
+    res.json({ ...fallback, source: "scraper" });
   }
 });
 
-// STANDINGS
+// ======================
+// 📊 STANDINGS
+// ======================
 app.get("/api/football/standings", async (req, res) => {
   try {
     const { leagueId } = req.query;
 
     const data = await getStandings(leagueId || 8);
 
+    if (!data?.data?.length) {
+      console.warn("⚠️ Standings fallback triggered");
+      const fallback = await scrapeStandings();
+      return res.json({ ...fallback, source: "scraper" });
+    }
+
     res.json({
       success: true,
-      standings: data.data || [],
+      standings: data.data,
+      source: "sportmonks",
     });
   } catch (err) {
-    console.error("Standings API error:", err.message);
-    res.status(500).json({ error: "Failed to fetch standings" });
+    console.warn("Standings API failed → fallback:", err.message);
+
+    const fallback = await scrapeStandings();
+    res.json({ ...fallback, source: "scraper" });
+  }
+});
+
+// ======================
+// 📈 RESULTS
+// ======================
+app.get("/api/football/results", async (req, res) => {
+  try {
+    const data = await getLiveScores();
+
+    if (!data?.data?.length) {
+      const fallback = await scrapeResults();
+      return res.json({ ...fallback, source: "scraper" });
+    }
+
+    res.json({
+      success: true,
+      results: data.data,
+      source: "sportmonks",
+    });
+  } catch (err) {
+    const fallback = await scrapeResults();
+    res.json({ ...fallback, source: "scraper" });
+  }
+});
+
+// ======================
+// 🔁 H2H
+// ======================
+app.get("/api/football/h2h", async (req, res) => {
+  try {
+    const { home, away } = req.query;
+
+    // ⚠️ Sportmonks H2H requires team IDs (skipping → fallback directly)
+    const fallback = await scrapeH2H(home, away);
+
+    res.json({ ...fallback, source: "scraper" });
+  } catch (err) {
+    console.error("H2H error:", err.message);
+
+    const fallback = await scrapeH2H(req.query.home, req.query.away);
+    res.json({ ...fallback, source: "scraper" });
   }
 });
 

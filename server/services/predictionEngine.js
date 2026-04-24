@@ -7,13 +7,16 @@
  * - Normalized team stats
  */
 
-import { calculateEloProbabilities } from "./eloModel.js";
-import { calculatePoissonProbabilities } from "./poissonModel.js";
+// ==========================
+// 📦 IMPORT MODELS (FIXED PATHS)
+// ==========================
+import { calculateEloProbabilities } from "../../src/lib/eloModel.js";
+import { calculatePoissonProbabilities } from "../../src/lib/poissonModel.js";
 import {
   calculateFormScore,
   calculateMomentum,
   calculateFormProbabilities
-} from "./formModel.js";
+} from "../../src/lib/formModel.js";
 
 // ==========================
 // 📊 BUILD TEAM FEATURES
@@ -46,9 +49,8 @@ export function buildPredictionInput(standings) {
       attack_strength: goalsFor / played || 1,
       defense_strength: goalsAgainst / played || 1,
 
-      // 📊 FORM MODEL (FIXED)
+      // 📊 FORM MODEL
       form_weight: calculateFormScore(formArray),
-
       form: formArray,
 
       // ⚡ ELO BASE
@@ -82,7 +84,7 @@ export function buildMatchInput(home, away, teams) {
   // ⚽ POISSON MODEL
   const poisson = calculatePoissonProbabilities(H, A);
 
-  // 📊 FORM MODEL (optional enhancement)
+  // 📊 FORM MODEL
   const form = calculateFormProbabilities(H, A);
 
   return {

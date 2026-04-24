@@ -19,7 +19,7 @@ export const callGemini = async (prompt) => {
           "Content-Type": "application/json",
           "X-goog-api-key": process.env.GEMINI_API_KEY,
         },
-        timeout: 30000, // ⬅️ increase to 30s
+        timeout: 60000, // ⬅️ increase timeout
       }
     );
 

@@ -7,8 +7,7 @@
 
 import {
   getFixtures,
-  getStandings,
-  getLiveScores,
+  getStandings
 } from "./footballDataService.js";
 
 import {
@@ -33,7 +32,10 @@ async function getDataWithFallback(primaryFn, fallbackFn) {
       data?.results?.length;
 
     if (hasData) {
-      return { data, source: "football-data.org" };
+      return {
+        data,
+        source: "football-data.org"
+      };
     }
 
     throw new Error("Primary empty");
@@ -42,12 +44,15 @@ async function getDataWithFallback(primaryFn, fallbackFn) {
 
     const fallback = await fallbackFn();
 
-    return { data: fallback, source: "scraper" };
+    return {
+      data: fallback,
+      source: "scraper"
+    };
   }
 }
 
 // ==========================
-// ⚽ FIXTURES
+// ⚽ FIXTURES PIPELINE
 // ==========================
 export async function getFixturesPipeline(date) {
   return getDataWithFallback(
@@ -57,7 +62,7 @@ export async function getFixturesPipeline(date) {
 }
 
 // ==========================
-// 📊 STANDINGS + NORMALIZATION (IMPORTANT)
+// 📊 STANDINGS PIPELINE (NORMALIZED)
 // ==========================
 export async function getStandingsPipeline(leagueId) {
   const result = await getDataWithFallback(
@@ -83,11 +88,11 @@ export async function getStandingsPipeline(leagueId) {
 }
 
 // ==========================
-// 📈 RESULTS + NORMALIZATION
+// 📈 RESULTS PIPELINE (SCRAPER ONLY + NORMALIZED)
 // ==========================
 export async function getResultsPipeline() {
   const result = await getDataWithFallback(
-    () => getLiveScores(),
+    scrapeResults,   // football-data.org NOT needed for live results
     scrapeResults
   );
 

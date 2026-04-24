@@ -19,7 +19,7 @@ export const callGemini = async (prompt) => {
           "Content-Type": "application/json",
           "X-goog-api-key": process.env.GEMINI_API_KEY,
         },
-        timeout: 20000, // ⬅️ increase timeout (20s)
+        timeout: 20000,
       }
     );
 
@@ -30,7 +30,6 @@ export const callGemini = async (prompt) => {
       error.response?.data || error.message
     );
 
-    // ✅ graceful fallback (CRITICAL for your app)
     return {
       fallback: true,
       message: "AI temporarily unavailable",
